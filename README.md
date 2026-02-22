@@ -67,17 +67,17 @@ The engine is 100% database-free for extreme portability.
 Download cinegnosis-engine.exe from the Releases tab.
 Double-click to run. The engine will automatically fetch your local IP, start the backend, serve the React frontend, and display the Smart QR code on your screen.
 * **Option B:** Build from Source
-  # 1. Clone the repository
+ 1. Clone the repository
 git clone 
 cd cinegnosis
 
-# 2. Install dependencies
+ 2. Install dependencies
 npm install
 
-# 3. Build the React Client
+ 3. Build the React Client
 cd client && npm run build
 
-# 4. Start the Core Engine
+ 4. Start the Core Engine
 cd ../server && npm run start
 
 
