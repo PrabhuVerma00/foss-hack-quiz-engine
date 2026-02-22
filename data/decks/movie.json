@@ -1,0 +1,31 @@
+{
+  "deck_meta": {
+    "id": "deck_movies_001",
+    "title": "Hollywood Blockbusters",
+    "author": "CineGnosis Team",
+    "version": "1.0",
+    "total_questions": 20
+  },
+  "questions": [
+    {
+      "q_id": "q_01",
+      "type": "image_guess",
+      "prompt": "Which movie is this frame from?",
+      "asset_ref": "interstellar_docking.webp", 
+      "options": ["Gravity", "Interstellar", "The Martian", "Apollo 13"],
+      "correct_answer": "Interstellar",
+      "time_limit_ms": 15000,
+      "fuzzy_allowances": ["Interstelar", "Inter steller"]
+    },
+    {
+      "q_id": "q_02",
+      "type": "text_only",
+      "prompt": "Who directed the Lord of the Rings trilogy?",
+      "asset_ref": null,
+      "options": ["Steven Spielberg", "Peter Jackson", "James Cameron", "George Lucas"],
+      "correct_answer": "Peter Jackson",
+      "time_limit_ms": 10000,
+      "fuzzy_allowances": ["Peter Jakson"]
+    }
+  ]
+}
