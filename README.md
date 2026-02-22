@@ -12,7 +12,8 @@
 Current multiplayer event software (Kahoot, Jackbox, Mentimeter) relies entirely on stable cloud architecture. In high-density venues like college hackathons, rural classrooms, or basement meetups, the local Wi-Fi router chokes when 50+ users connect simultaneously. The game lags, players disconnect, and the event is ruined.
 
 ##  The Solution: An Infrastructure-Agnostic Engine
-**CineGnosis** is not just a game; it is an open-source, self-hosted multiplayer framework. It decouples gameplay from ISP stability by treating the **Local Area Network (LAN)** as a first-class citizen, delivering 0ms latency gameplay entirely offline, while utilizing smart tunneling to prevent router hardware crashes.
+
+CineGnosis is not just a game; it is an open-source, self-hosted multiplayer framework. It decouples gameplay from ISP stability by treating the **Local Area Network (LAN)** as a first-class citizen, delivering 0ms latency gameplay entirely offline, while utilizing smart tunneling to prevent router hardware crashes.
 ---
 
 ##  Architectural Innovations
