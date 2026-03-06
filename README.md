@@ -185,7 +185,15 @@ Because it is fully open source and content-agnostic, LocalFlux is equally usefu
 The absence of any external dependency — no database, no cloud account, no paid service — means the total cost of running LocalFlux at any scale is zero.
 
 ---
+##  AI Usage & Attributions (FOSS Hack Rule 7)
 
+In compliance with FOSS Hack guidelines, this project utilized AI tools to accelerate development while maintaining a strictly human-led core architecture:
+
+
+* **Claude:** Utilized for generating boilerplate code (React component structures and Socket.io event scaffolding) based on strictly defined data schemas and prompts.
+
+* **Strictly Human-Led:** The core project scoping (V1 MVP), the `.flux` deck conceptualization, the underlying security logic preventing answer leaks to the client, debugging, and final code integration were entirely human-directed.
+--
 ## License
 
 This project is licensed under the **MIT License**. See the [LICENSE](./LICENSE) file for the full text.
