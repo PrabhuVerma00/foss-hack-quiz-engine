@@ -38,6 +38,10 @@ features:
       limits, and fuzzy-match allowances for spelling variants.
 ---
 
+::: warning 🚧 Pre-Release — V1 Launches March 15, 2026
+The **full V1 release** is not yet published. The working quiz engine (room creation, live lobby, full quiz loop, 44-test suite) is already available in the [`main` branch on GitHub](https://github.com/Unknownbeliek/foss-hack-quiz-engine) and can be run locally today. The official tagged release drops **March 15, 2026**.
+:::
+
 ## How it works
 
 ```
