@@ -1,5 +1,6 @@
 ﻿import { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
+import Chat from './Chat';
 
 export default function Host({ onBack }) {
   const socketRef = useRef(null);
@@ -120,6 +121,11 @@ export default function Host({ onBack }) {
             </div>
           ))}
         </div>
+
+        <div className="mb-4">
+          <Chat socket={socketRef.current} roomPin={pin} />
+        </div>
+
         <button onClick={handleNext} className="w-full bg-zinc-800 hover:bg-zinc-700 active:scale-95 text-white font-black text-lg py-4 rounded-xl transition-all duration-100">
           REVEAL ANSWER
         </button>
@@ -152,6 +158,11 @@ export default function Host({ onBack }) {
             </div>
           )}
         </div>
+
+        <div className="mb-4">
+          <Chat socket={socketRef.current} roomPin={pin} />
+        </div>
+
         {error && <p className="text-red-500 text-xs mb-3 font-mono">{error}</p>}
         <button onClick={handleStart} disabled={players.length === 0} className="w-full bg-yellow-400 hover:bg-yellow-300 active:scale-95 disabled:opacity-25 disabled:cursor-not-allowed text-black font-black text-2xl py-5 rounded-xl transition-all duration-100">
           {players.length === 0 ? 'waiting...' : `START  ${players.length} PLAYER${players.length > 1 ? 'S' : ''}`}

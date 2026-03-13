@@ -18,6 +18,9 @@ const {
 } = require('../core/roomStore');
 
 const { startGame, submitAnswer, advanceQuestion } = require('../core/gameEngine');
+const { ChatManager } = require('../core/chatManager');
+
+let chatInstance = null;
 
 /**
  * Register all game event handlers on a connected socket.
@@ -27,6 +30,11 @@ const { startGame, submitAnswer, advanceQuestion } = require('../core/gameEngine
  * @param {object[]} questions - Pre-loaded QUESTIONS array from the deck
  */
 function registerHandlers(socket, io, questions) {
+  // create ChatManager singleton when first socket connects
+  if (!chatInstance) {
+    chatInstance = new ChatManager(io);
+  }
+
   // ── create_room ─────────────────────────────────────────────────────────
   socket.on('create_room', ({ roomName }, callback) => {
     if (!roomName || !roomName.trim()) {
@@ -118,9 +126,16 @@ function registerHandlers(socket, io, questions) {
     }
   });
 
+  // attach chat listeners
+  socket.on('chat:free', (payload, ack) => chatInstance.handleEvent(socket, 'chat:free', payload, ack));
+  socket.on('chat:pre', (payload, ack) => chatInstance.handleEvent(socket, 'chat:pre', payload, ack));
+
   // ── disconnect ───────────────────────────────────────────────────────────
   socket.on('disconnect', () => {
     console.log(`[-] Disconnected: ${socket.id}`);
+
+    // cleanup chat state
+    if (chatInstance) chatInstance.onDisconnect(socket.id);
 
     const hostPin = findHostPin(socket.id);
     if (hostPin) {
