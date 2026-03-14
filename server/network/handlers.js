@@ -155,6 +155,27 @@ function registerHandlers(socket, io, questions) {
     callback?.({ ok: true });
   });
 
+  // host sets chat mode (OFF | FREE | RESTRICTED) and optional allowed messages
+  socket.on('chat:host_set_mode', ({ pin: p, mode, allowed }, callback) => {
+    const pin = p || findHostPin(socket.id);
+    if (!pin) return callback?.({ ok: false, reason: 'not_host' });
+    const room = getRoom(pin);
+    if (!room) return callback?.({ ok: false, reason: 'room_not_found' });
+    if (room.hostId !== socket.id) return callback?.({ ok: false, reason: 'not_host' });
+    if (!chatInstance) return callback?.({ ok: false });
+    try {
+      if (mode === 'RESTRICTED' && Array.isArray(allowed)) {
+        // basic validation of allowed shape
+        chatInstance.allowed = allowed.map(a => ({ id: String(a.id), text: String(a.text) }));
+      }
+      chatInstance.setMode(mode);
+      io.to(pin).emit('chat:mode', { mode: chatInstance.mode, allowed: chatInstance.allowed });
+      callback?.({ ok: true });
+    } catch (err) {
+      callback?.({ ok: false, reason: err.message });
+    }
+  });
+
   // ── disconnect ───────────────────────────────────────────────────────────
   socket.on('disconnect', () => {
     console.log(`[-] Disconnected: ${socket.id}`);

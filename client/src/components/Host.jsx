@@ -19,12 +19,16 @@ export default function Host({ onBack }) {
   const [resultData, setResultData] = useState(null);
   const [finalScores, setFinalScores] = useState([]);
   const [mutedSet, setMutedSet] = useState(new Set());
+  const [chatMode, setChatMode] = useState('OFF');
 
   useEffect(() => {
     const socket = io(`http://${window.location.hostname}:3000`, { transports: ['websocket'] });
     socketRef.current = socket;
     socket.on('connect', () => setConnected(true));
     socket.on('disconnect', () => setConnected(false));
+    // keep host view of chat mode in sync
+    socket.on('chat:mode', ({ mode }) => setChatMode(mode));
+    
     socket.on('player_joined', ({ players }) => setPlayers(players));
     socket.on('room_closed', ({ message }) => { setError(message); setPhase('setup'); setPin(null); });
     socket.on('game_started', () => setPhase('question'));
@@ -84,6 +88,14 @@ export default function Host({ onBack }) {
   const handleUnmute = (socketId) => {
     socketRef.current.emit('chat:host_unmute', { target: socketId }, (ack) => {
       if (ack?.ok) setMutedSet((s) => { const n = new Set([...s]); n.delete(socketId); return n; });
+    });
+  };
+
+  const applyChatMode = (mode) => {
+    if (!socketRef.current?.connected) return setError('Not connected');
+    setError('');
+    socketRef.current.emit('chat:host_set_mode', { pin, mode }, (ack) => {
+      if (!ack?.ok) setError(ack?.reason || 'Failed to set chat mode');
     });
   };
 
@@ -147,6 +159,16 @@ export default function Host({ onBack }) {
           ))}
         </div>
 
+        {/* chat mode control for host */}
+        <div className="mb-4 flex items-center gap-2">
+          <select value={chatMode} onChange={(e) => setChatMode(e.target.value)} className="bg-zinc-900 rounded-xl px-3 py-2 text-sm">
+            <option value="OFF">OFF</option>
+            <option value="RESTRICTED">RESTRICTED</option>
+            <option value="FREE">FREE</option>
+          </select>
+          <button onClick={() => applyChatMode(chatMode)} className="bg-yellow-400 px-3 py-2 rounded-xl font-black">Set Chat</button>
+        </div>
+
         <div className="mb-4">
           <Chat socket={socketRef.current} roomPin={pin} />
         </div>
@@ -161,6 +183,16 @@ export default function Host({ onBack }) {
   if (phase === 'lobby') {
     return (
       <div className="min-h-screen bg-black text-white flex flex-col p-6 pt-10">
+        {/* chat mode control for host (lobby) */}
+        <div className="mb-4 flex items-center gap-2">
+          <select value={chatMode} onChange={(e) => setChatMode(e.target.value)} className="bg-zinc-900 rounded-xl px-3 py-2 text-sm">
+            <option value="OFF">OFF</option>
+            <option value="RESTRICTED">RESTRICTED</option>
+            <option value="FREE">FREE</option>
+          </select>
+          <button onClick={() => applyChatMode(chatMode)} className="bg-yellow-400 px-3 py-2 rounded-xl font-black">Set Chat</button>
+        </div>
+
         <div className="flex items-center justify-between mb-10">
           <p className="text-xs uppercase tracking-[0.3em] text-zinc-500">{roomName}</p>
           <span className={`text-xs font-mono ${connected ? 'text-green-500' : 'text-red-500'}`}>{connected ? 'live' : 'offline'}</span>
