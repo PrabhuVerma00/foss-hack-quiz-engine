@@ -64,7 +64,16 @@ export default function Host({ onBack }) {
     if (!socketRef.current?.connected) return setError('Not connected.');
     setError('');
     socketRef.current.emit('create_room', { roomName }, (res) => {
-      if (res.success) { setPin(res.pin); setPhase('lobby'); }
+      if (res.success) { setPin(res.pin); setPhase('lobby');
+        // apply the selected chat mode immediately for the new room
+        if (chatMode) {
+          const payload = { pin: res.pin, mode: chatMode };
+          if (chatMode === 'RESTRICTED') payload.allowed = allowedList;
+          socketRef.current.emit('chat:host_set_mode', payload, (ack) => {
+            if (!ack?.ok) setError(ack?.reason || 'Failed to set chat mode');
+          });
+        }
+      }
       else setError('Failed to create room.');
     });
   };
