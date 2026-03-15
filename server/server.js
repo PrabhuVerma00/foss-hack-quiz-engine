@@ -47,6 +47,32 @@ io.on('connection', (socket) => {
   registerHandlers(socket, io, QUESTIONS);
 });
 
+//  API endpoints
+
+app.get('/api/decks', (req, res) => {
+  const decksDir = path.resolve(__dirname, '..', 'data', 'decks');
+  if (!fs.existsSync(decksDir)) {
+    return res.json([]);
+  }
+  const decks = fs.readdirSync(decksDir)
+    .filter(f => f.endsWith('.json'))
+    .map(f => {
+      try {
+        const data = JSON.parse(fs.readFileSync(path.join(decksDir, f), 'utf8'));
+        return {
+          name: f.replace('.json', ''),
+          file: f,
+          count: Array.isArray(data.questions) ? data.questions.length : 0
+        };
+      } catch (e) {
+        console.error(`[Deck] Error reading ${f}:`, e.message);
+        return null;
+      }
+    })
+    .filter(d => d !== null);
+  res.json(decks);
+});
+
 //  Log downloading endpoint
 
 app.get('/logs/chat', (req, res) => {

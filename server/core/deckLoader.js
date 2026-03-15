@@ -23,7 +23,12 @@ function loadDeck(deckPath) {
   }
 
   const raw = fs.readFileSync(deckPath, 'utf-8');
-  const deck = JSON.parse(raw);
+  let deck;
+  try {
+    deck = JSON.parse(raw);
+  } catch (err) {
+    throw new Error(`Invalid JSON in deck at ${deckPath}: ${err.message}`);
+  }
 
   if (!Array.isArray(deck.questions)) {
     throw new Error(`Deck at "${deckPath}" is missing a "questions" array.`);
@@ -34,14 +39,18 @@ function loadDeck(deckPath) {
 
 /**
  * Remove answer-critical fields before broadcasting a question to players.
- * Strips `correct_answer` and `fuzzy_allowances` from the question object.
+ * Uses an allowlist of safe fields instead of blocklist for better security.
+ * Only sends: q_id, type, prompt, options, time_limit_ms, image_url, video_url.
  *
  * @param {object} question - A raw question object from the deck.
- * @returns {object} A safe copy with answer fields removed.
+ * @returns {object} A safe copy with only whitelisted fields.
  */
 function sanitizeQuestion(question) {
-  // eslint-disable-next-line no-unused-vars
-  const { correct_answer, fuzzy_allowances, ...safe } = question;
+  const SAFE_FIELDS = ['q_id', 'type', 'prompt', 'options', 'time_limit_ms', 'image_url', 'video_url'];
+  const safe = {};
+  SAFE_FIELDS.forEach(field => {
+    if (field in question) safe[field] = question[field];
+  });
   return safe;
 }
 

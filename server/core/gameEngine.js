@@ -94,6 +94,7 @@ function submitAnswer(room, questions, socketId, answer) {
  */
 function advanceQuestion(room, questions) {
   if (room.status !== 'started') throw new Error('Game is not in progress.');
+  if (room.currentQ >= questions.length) throw new Error('Game is already finished.');
 
   const prevQ = questions[room.currentQ];
   const result = {

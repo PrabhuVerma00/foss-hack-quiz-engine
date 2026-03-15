@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { io } from 'socket.io-client';
 
-export default function Chat({ socket, roomPin }) {
+export default function Chat({ socket, roomPin, readOnly = false }) {
   const [mode, setMode] = useState('OFF');
   const [allowed, setAllowed] = useState([]);
   const [messages, setMessages] = useState([]);
@@ -60,17 +60,21 @@ export default function Chat({ socket, roomPin }) {
         <div className="mb-2 text-xs text-red-400">You are muted by the host. Messages are disabled.</div>
       )}
 
-      {mode === 'RESTRICTED' ? (
-        <div className="grid grid-cols-4 gap-2">
-          {allowed.map(a => (
-            <button key={a.id} onClick={() => sendPre(a.id)} className="bg-zinc-900 rounded-xl px-3 py-2 text-sm" disabled={muted}>{a.text}</button>
-          ))}
-        </div>
+      {readOnly ? (
+        <div className="text-xs text-zinc-500">Host view — read-only</div>
       ) : (
-        <div className="flex gap-2">
-          <input value={input} onChange={(e) => setInput(e.target.value)} className="flex-1 bg-zinc-900 rounded-xl px-3 py-2 text-white text-sm" disabled={muted} />
-          <button onClick={sendFree} className="bg-yellow-400 px-4 py-2 rounded-xl font-black" disabled={muted}>SEND</button>
-        </div>
+        mode === 'RESTRICTED' ? (
+          <div className="grid grid-cols-4 gap-2">
+            {allowed.map(a => (
+              <button key={a.id} onClick={() => sendPre(a.id)} className="bg-zinc-900 rounded-xl px-3 py-2 text-sm" disabled={muted}>{a.text}</button>
+            ))}
+          </div>
+        ) : (
+          <div className="flex gap-2">
+            <input value={input} onChange={(e) => setInput(e.target.value)} className="flex-1 bg-zinc-900 rounded-xl px-3 py-2 text-white text-sm" disabled={muted} />
+            <button onClick={sendFree} className="bg-yellow-400 px-4 py-2 rounded-xl font-black" disabled={muted}>SEND</button>
+          </div>
+        )
       )}
     </div>
   );

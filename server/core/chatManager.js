@@ -117,8 +117,7 @@ class ChatManager {
       entry.count = 0; entry.windowStart = now;
     }
     entry.count += 1;
-    if (entry.count > this.IP_LIMIT) return false;
-    return true;
+    return entry.count <= this.IP_LIMIT; // Check after increment (atomic)
   }
 
   writeLog(obj) {

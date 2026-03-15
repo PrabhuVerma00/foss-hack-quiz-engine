@@ -57,6 +57,7 @@ function registerHandlers(socket, io, questions) {
     }
 
     addPlayer(pin, { id: socket.id, name: playerName });
+    socket.playerName = playerName; // Set socket attribute for chat messages
     socket.join(pin);
     console.log(`[Join] "${playerName}" → PIN ${pin}`);
 
