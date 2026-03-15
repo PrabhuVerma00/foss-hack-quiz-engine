@@ -18,6 +18,9 @@ const {
 } = require('../core/roomStore');
 
 const { startGame, submitAnswer, advanceQuestion } = require('../core/gameEngine');
+const { ChatManager } = require('../core/chatManager');
+
+let chatInstance = null;
 
 /**
  * Register all game event handlers on a connected socket.
@@ -27,6 +30,11 @@ const { startGame, submitAnswer, advanceQuestion } = require('../core/gameEngine
  * @param {object[]} questions - Pre-loaded QUESTIONS array from the deck
  */
 function registerHandlers(socket, io, questions) {
+  // create ChatManager singleton when first socket connects
+  if (!chatInstance) {
+    chatInstance = new ChatManager(io);
+  }
+
   // ── create_room ─────────────────────────────────────────────────────────
   socket.on('create_room', ({ roomName }, callback) => {
     if (!roomName || !roomName.trim()) {
@@ -49,6 +57,7 @@ function registerHandlers(socket, io, questions) {
     }
 
     addPlayer(pin, { id: socket.id, name: playerName });
+    socket.playerName = playerName; // Set socket attribute for chat messages
     socket.join(pin);
     console.log(`[Join] "${playerName}" → PIN ${pin}`);
 
@@ -118,9 +127,72 @@ function registerHandlers(socket, io, questions) {
     }
   });
 
+  // attach chat listeners
+  socket.on('chat:free', (payload, ack) => chatInstance.handleEvent(socket, 'chat:free', payload, ack));
+  socket.on('chat:pre', (payload, ack) => chatInstance.handleEvent(socket, 'chat:pre', payload, ack));
+
+  // host moderation events
+  socket.on('chat:host_mute', ({ target }, callback) => {
+    const pin = findHostPin(socket.id);
+    if (!pin) return callback?.({ ok: false, reason: 'not_host' });
+    const room = getRoom(pin);
+    if (!room) return callback?.({ ok: false, reason: 'room_not_found' });
+    if (room.hostId !== socket.id) return callback?.({ ok: false, reason: 'not_host' });
+    if (!chatInstance) return callback?.({ ok: false });
+    chatInstance.mute(target);
+    io.to(pin).emit('chat:moderation', { action: 'mute', target });
+    callback?.({ ok: true });
+  });
+
+  socket.on('chat:host_unmute', ({ target }, callback) => {
+    const pin = findHostPin(socket.id);
+    if (!pin) return callback?.({ ok: false, reason: 'not_host' });
+    const room = getRoom(pin);
+    if (!room) return callback?.({ ok: false, reason: 'room_not_found' });
+    if (room.hostId !== socket.id) return callback?.({ ok: false, reason: 'not_host' });
+    if (!chatInstance) return callback?.({ ok: false });
+    chatInstance.unmute(target);
+    io.to(pin).emit('chat:moderation', { action: 'unmute', target });
+    callback?.({ ok: true });
+  });
+
+  // host sets chat mode (OFF | FREE | RESTRICTED) and optional allowed messages
+  socket.on('chat:host_set_mode', ({ pin: p, mode, allowed }, callback) => {
+    const pin = p || findHostPin(socket.id);
+    if (!pin) return callback?.({ ok: false, reason: 'not_host' });
+    const room = getRoom(pin);
+    if (!room) return callback?.({ ok: false, reason: 'room_not_found' });
+    if (room.hostId !== socket.id) return callback?.({ ok: false, reason: 'not_host' });
+    if (!chatInstance) return callback?.({ ok: false });
+    try {
+      if (mode === 'RESTRICTED' && Array.isArray(allowed)) {
+        // server-side validation: limit count and text length
+        const MAX_ALLOWED = 24;
+        const MAX_TEXT_LEN = 120;
+        const validated = [];
+        for (const a of allowed.slice(0, MAX_ALLOWED)) {
+          const tid = String(a.id || `c_${Date.now().toString(36)}`);
+          const txt = String(a.text || '').trim().slice(0, MAX_TEXT_LEN);
+          if (txt.length === 0) continue;
+          validated.push({ id: tid, text: txt });
+        }
+        if (validated.length === 0) return callback?.({ ok: false, reason: 'no_valid_allowed' });
+        chatInstance.allowed = validated;
+      }
+      chatInstance.setMode(mode);
+      io.to(pin).emit('chat:mode', { mode: chatInstance.mode, allowed: chatInstance.allowed });
+      callback?.({ ok: true });
+    } catch (err) {
+      callback?.({ ok: false, reason: err.message });
+    }
+  });
+
   // ── disconnect ───────────────────────────────────────────────────────────
   socket.on('disconnect', () => {
     console.log(`[-] Disconnected: ${socket.id}`);
+
+    // cleanup chat state
+    if (chatInstance) chatInstance.onDisconnect(socket.id);
 
     const hostPin = findHostPin(socket.id);
     if (hostPin) {

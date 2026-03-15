@@ -1,5 +1,6 @@
 ﻿import { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
+import Chat from './Chat';
 
 export default function Player({ onBack }) {
   const socketRef = useRef(null);
@@ -135,6 +136,10 @@ export default function Player({ onBack }) {
             </button>
           ))}
         </div>
+
+        <div className="mt-6">
+          <Chat socket={socketRef.current} roomPin={pin} />
+        </div>
       </div>
     );
   }
@@ -147,6 +152,10 @@ export default function Player({ onBack }) {
         <p className={`text-xs font-mono mt-4 ${connected ? 'text-green-500' : 'text-red-500'}`}>
           {connected ? 'connected' : 'reconnecting...'}
         </p>
+
+        <div className="w-full max-w-md mt-6">
+          <Chat socket={socketRef.current} roomPin={pin} />
+        </div>
       </div>
     );
   }
