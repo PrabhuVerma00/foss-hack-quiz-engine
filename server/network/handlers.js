@@ -23,6 +23,7 @@ const { ChatManager } = require('../core/chatManager');
 const { sanitizeQuestion } = require('../core/deckLoader');
 
 let chatInstance = null;
+const DEFAULT_AVATAR_OBJECT = { type: 'gradient', value: 'emerald' };
 const HOST_RECONNECT_GRACE_MS = 45000;
 const hostDisconnectTimers = new Map();
 const PLAYER_RECONNECT_GRACE_MS = 45000;
@@ -71,6 +72,38 @@ function withQuestionTiming(payload) {
     durationMs,
     startedAt: now,
     endsAt: now + durationMs,
+  };
+}
+
+function findPlayerRoomBySocketId(socketId) {
+  for (const pin of Object.keys(rooms)) {
+    const room = rooms[pin];
+    if (room.players.some((p) => p.id === socketId)) {
+      return { pin, room };
+    }
+  }
+  return { pin: null, room: null };
+}
+
+function normalizeAvatarObject(input) {
+  if (!input || typeof input !== 'object') {
+    return { ...DEFAULT_AVATAR_OBJECT };
+  }
+
+  const rawType = String(input.type || '').trim();
+  const rawValue = String(input.value || '').trim();
+
+  if (!rawType || !rawValue) {
+    return { ...DEFAULT_AVATAR_OBJECT };
+  }
+
+  if (!['gradient', 'icon', 'preset'].includes(rawType)) {
+    return { ...DEFAULT_AVATAR_OBJECT };
+  }
+
+  return {
+    type: rawType,
+    value: rawValue.slice(0, 48),
   };
 }
 
@@ -167,7 +200,7 @@ function registerHandlers(socket, io, questions) {
       return callback({ success: false, error: 'Game already in progress.' });
     }
 
-    addPlayer(pin, { id: socket.id, name: playerName });
+    addPlayer(pin, { id: socket.id, name: playerName, avatarObject: { ...DEFAULT_AVATAR_OBJECT } });
     socket.playerName = playerName; // Set socket attribute for chat messages
     socket.playerSessionId = playerSessionId || null;
     socket.join(pin);
@@ -175,7 +208,12 @@ function registerHandlers(socket, io, questions) {
 
     io.to(pin).emit('player_joined', { players: room.players });
     socket.emit('chat:mode', { mode: chatInstance.mode, allowed: chatInstance.allowed });
-    callback({ success: true, roomName: room.roomName });
+    callback({
+      success: true,
+      roomName: room.roomName,
+      chatMode: chatInstance.mode,
+      chatAllowed: chatInstance.allowed,
+    });
   });
 
   // ── player:resume ───────────────────────────────────────────────────────
@@ -202,7 +240,11 @@ function registerHandlers(socket, io, questions) {
       playerDisconnectTimers.delete(playerSessionId);
     }
 
-    addPlayer(pin, { id: socket.id, name: pending.playerName });
+    addPlayer(pin, {
+      id: socket.id,
+      name: pending.playerName,
+      avatarObject: normalizeAvatarObject(pending.avatarObject),
+    });
     const me = room.players.find((p) => p.id === socket.id);
     if (me) me.score = Number(pending.score) || 0;
 
@@ -231,6 +273,8 @@ function registerHandlers(socket, io, questions) {
       roomName: room.roomName,
       status: room.status,
       myScore: me?.score || 0,
+      chatMode: chatInstance.mode,
+      chatAllowed: chatInstance.allowed,
       alreadyAnswered: pending.lastAnswer !== undefined,
       answeredValue: pending.lastAnswer,
       activeQuestion: canSyncQuestion
@@ -241,6 +285,38 @@ function registerHandlers(socket, io, questions) {
           })
         : null,
     });
+  });
+
+  // ── player:updateProfile ───────────────────────────────────────────────
+  socket.on('player:updateProfile', ({ newName, avatarObject }, callback) => {
+    const { pin, room } = findPlayerRoomBySocketId(socket.id);
+    if (!room || !pin) {
+      return callback?.({ success: false, error: 'Player is not in an active room.' });
+    }
+
+    const normalizedName = String(newName || '').trim().slice(0, 24);
+    const normalizedAvatarObject = normalizeAvatarObject(avatarObject);
+
+    if (!normalizedName) {
+      return callback?.({ success: false, error: 'Display name is required.' });
+    }
+
+    const target = room.players.find((p) => p.id === socket.id);
+    if (!target) {
+      return callback?.({ success: false, error: 'Player not found.' });
+    }
+
+    target.name = normalizedName;
+    target.avatarObject = normalizedAvatarObject;
+    socket.playerName = normalizedName;
+
+    io.to(pin).emit('player:profileUpdated', {
+      player: { ...target },
+      players: room.players,
+    });
+    io.to(pin).emit('player_joined', { players: room.players });
+
+    return callback?.({ success: true, player: { ...target } });
   });
 
   // ── start_game ───────────────────────────────────────────────────────────
@@ -464,6 +540,7 @@ function registerHandlers(socket, io, questions) {
           pendingPlayerReconnect.set(playerSessionId, {
             pin: playerPin,
             playerName: disconnectedPlayer.name,
+            avatarObject: normalizeAvatarObject(disconnectedPlayer.avatarObject),
             score: disconnectedPlayer.score,
             lastAnswer,
           });

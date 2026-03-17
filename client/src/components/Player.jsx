@@ -1,9 +1,47 @@
 ﻿import { useState, useEffect, useRef } from 'react';
 import Chat from './Chat';
 import { createGameSocket } from '../backendUrl';
+import { Rocket, Shield, Zap, Flame } from 'lucide-react';
 
 const PLAYER_SESSION_KEY = 'lf_player_session_id';
 const PLAYER_STATE_KEY = 'lf_player_state';
+const PRESET_AVATARS = [
+  '1.avf',
+  '1.jpg',
+  '11.avf',
+  '2.jpg',
+  '4.jpg',
+  '5.jpg',
+  '6.avf',
+  '7dcc3f3eebc2fccd2f9dd3146c61c914.avf',
+  '8.avf',
+  'e55afb4aea57bced165fb55ad92addf5.jpg',
+];
+const GRADIENT_AVATARS = [
+  { value: 'emerald', className: 'bg-gradient-to-br from-emerald-300 via-emerald-500 to-teal-600' },
+  { value: 'sunset', className: 'bg-gradient-to-br from-amber-300 via-orange-500 to-rose-600' },
+  { value: 'ocean', className: 'bg-gradient-to-br from-cyan-300 via-sky-500 to-indigo-700' },
+  { value: 'neon', className: 'bg-gradient-to-br from-lime-300 via-green-500 to-emerald-700' },
+];
+const ICON_AVATARS = [
+  { value: 'rocket', Icon: Rocket },
+  { value: 'shield', Icon: Shield },
+  { value: 'zap', Icon: Zap },
+  { value: 'flame', Icon: Flame },
+];
+
+function normalizeAvatarObject(input) {
+  if (!input || typeof input !== 'object') return { type: 'gradient', value: 'emerald' };
+  if (!['preset', 'gradient', 'icon'].includes(input.type)) return { type: 'gradient', value: 'emerald' };
+  if (!String(input.value || '').trim()) return { type: 'gradient', value: 'emerald' };
+  return { type: input.type, value: String(input.value).trim() };
+}
+
+function resolvePresetPath(value) {
+  const trimmed = String(value || '').trim();
+  if (!trimmed) return '/avatars/1.png';
+  return trimmed.includes('.') ? `/avatars/${trimmed}` : `/avatars/${trimmed}.png`;
+}
 
 function getOrCreatePlayerSessionId() {
   if (typeof window === 'undefined') return '';
@@ -50,9 +88,14 @@ export default function Player({ onBack }) {
   const socketRef = useRef(null);
   const [connected, setConnected] = useState(false);
   const [name, setName] = useState(savedPlayerState?.name || '');
+  const [avatarObject, setAvatarObject] = useState(normalizeAvatarObject(savedPlayerState?.avatarObject));
+  const [avatarTab, setAvatarTab] = useState(savedPlayerState?.avatarObject?.type || 'preset');
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [hiddenPresetPaths, setHiddenPresetPaths] = useState(() => new Set());
   const [pin, setPin] = useState(getPinFromUrl() || savedPlayerState?.pin || '');
   const [error, setError] = useState('');
   const [roomName, setRoomName] = useState(savedPlayerState?.roomName || '');
+  const [profileSaved, setProfileSaved] = useState(false);
 
   const [phase, setPhase] = useState(savedPlayerState?.pin ? 'waiting' : 'join');
   const [question, setQuestion] = useState(null);
@@ -61,6 +104,7 @@ export default function Player({ onBack }) {
   const [resultData, setResultData] = useState(null);
   const [finalScores, setFinalScores] = useState([]);
   const [chatMode, setChatMode] = useState('FREE');
+  const [chatAllowed, setChatAllowed] = useState([]);
   const [timeLeft, setTimeLeft] = useState(0);
   const [timeTotal, setTimeTotal] = useState(0);
   const [questionEndsAt, setQuestionEndsAt] = useState(0);
@@ -71,11 +115,12 @@ export default function Player({ onBack }) {
     if (!name.trim() && !pin.trim() && !roomName.trim()) return;
     persistPlayerState({
       name: name.trim(),
+      avatarObject,
       pin: pin.trim(),
       roomName: roomName.trim(),
       updatedAt: Date.now(),
     });
-  }, [name, pin, roomName]);
+  }, [name, avatarObject, pin, roomName]);
 
   useEffect(() => {
     const socket = createGameSocket();
@@ -103,7 +148,11 @@ export default function Player({ onBack }) {
           setError('');
           setPin(saved.pin);
           setName(saved.name);
+          setAvatarObject(normalizeAvatarObject(saved.avatarObject));
+          setAvatarTab(normalizeAvatarObject(saved.avatarObject).type);
           setRoomName(res.roomName || saved.roomName || '');
+          if (res.chatMode) setChatMode(res.chatMode);
+          if (Array.isArray(res.chatAllowed)) setChatAllowed(res.chatAllowed);
           setMyScore(Number(res.myScore) || 0);
 
           if (res.status === 'started' && res.activeQuestion) {
@@ -129,7 +178,15 @@ export default function Player({ onBack }) {
       );
     });
     socket.on('disconnect', () => setConnected(false));
-    socket.on('chat:mode', ({ mode }) => setChatMode(mode));
+    socket.on('player:profileUpdated', ({ player }) => {
+      if (!player || player.id !== socket.id) return;
+      if (typeof player.name === 'string') setName(player.name);
+      setAvatarObject(normalizeAvatarObject(player.avatarObject));
+    });
+    socket.on('chat:mode', ({ mode, allowed }) => {
+      if (mode) setChatMode(mode);
+      if (Array.isArray(allowed)) setChatAllowed(allowed);
+    });
     socket.on('room_closed', ({ message }) => {
       setError(message || 'Room closed by host.');
       setPhase('join');
@@ -184,6 +241,8 @@ export default function Player({ onBack }) {
     socketRef.current.emit('join_room', { pin, playerName: name.trim(), playerSessionId: playerSessionIdRef.current }, (res) => {
       if (res.success) {
         setRoomName(res.roomName);
+        if (res.chatMode) setChatMode(res.chatMode);
+        if (Array.isArray(res.chatAllowed)) setChatAllowed(res.chatAllowed);
         setPhase('waiting');
       }
       else setError(res.error || 'Could not join.');
@@ -207,6 +266,54 @@ export default function Player({ onBack }) {
     setChatDrawerOpen(false);
     setPhase('answered');
     socketRef.current.emit('submit_answer', { pin, answer: opt });
+  };
+
+  const handleSaveProfile = () => {
+    const newName = name.trim();
+    if (!newName) return setError('Display name cannot be empty.');
+    if (!socketRef.current?.connected) return setError('Not connected.');
+
+    setError('');
+    socketRef.current.emit('player:updateProfile', { newName, avatarObject }, (res) => {
+      if (!res?.success) {
+        setError(res?.error || 'Could not save profile.');
+        return;
+      }
+      setName(newName);
+      setAvatarObject(normalizeAvatarObject(res.player?.avatarObject || avatarObject));
+      setProfileSaved(true);
+      setIsEditingName(false);
+      window.setTimeout(() => setProfileSaved(false), 1800);
+    });
+  };
+
+  const renderAvatarBadge = (sizeClass = 'h-12 w-12') => {
+    if (avatarObject.type === 'preset') {
+      return (
+        <div
+          className={`${sizeClass} rounded-full border border-slate-600 p-1 shadow-inner`}
+          style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)' }}
+        >
+          <img
+            src={resolvePresetPath(avatarObject.value)}
+            alt="Selected avatar"
+            className="h-full w-full rounded-full object-contain drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)]"
+          />
+        </div>
+      );
+    }
+    if (avatarObject.type === 'icon') {
+      const iconEntry = ICON_AVATARS.find((entry) => entry.value === avatarObject.value) || ICON_AVATARS[0];
+      const AvatarIcon = iconEntry.Icon;
+      return (
+        <div className={`${sizeClass} rounded-full border border-emerald-500/40 bg-emerald-500/15 flex items-center justify-center text-emerald-200`}>
+          <AvatarIcon size={22} strokeWidth={2.4} />
+        </div>
+      );
+    }
+
+    const gradient = GRADIENT_AVATARS.find((entry) => entry.value === avatarObject.value)?.className || GRADIENT_AVATARS[0].className;
+    return <div className={`${sizeClass} rounded-full border border-white/20 ${gradient}`} />;
   };
 
   const timerTone =
@@ -334,7 +441,7 @@ export default function Player({ onBack }) {
         </div>
 
         <div className="mt-5 hidden rounded-2xl border border-slate-800 bg-slate-900/70 p-3 md:block">
-          <Chat socket={socketRef.current} roomPin={pin} title="Room Chat" />
+          <Chat socket={socketRef.current} roomPin={pin} title="Room Chat" initialMode={chatMode} initialAllowed={chatAllowed} />
         </div>
 
         <button
@@ -362,7 +469,7 @@ export default function Player({ onBack }) {
                 </button>
               </div>
               <div className="min-h-0 flex-1">
-                <Chat socket={socketRef.current} roomPin={pin} title="Room Chat" />
+                <Chat socket={socketRef.current} roomPin={pin} title="Room Chat" initialMode={chatMode} initialAllowed={chatAllowed} />
               </div>
             </div>
           </>
@@ -385,8 +492,146 @@ export default function Player({ onBack }) {
           Chat Mode: <span className={`${chatMode === 'FREE' ? 'text-emerald-300' : chatMode === 'RESTRICTED' ? 'text-amber-200' : 'text-slate-500'}`}>{modeLabels[chatMode] || chatMode}</span>
         </div>
 
+        <section className="w-full max-w-md rounded-3xl border border-slate-800 bg-slate-900/75 p-4 shadow-xl shadow-black/30">
+          <p className="text-[11px] uppercase tracking-[0.24em] text-slate-500">Player ID Card</p>
+          <div className="mt-3 rounded-2xl border border-slate-700 bg-slate-950/80 p-4">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Username</p>
+                  <p className="text-base font-black text-emerald-200">{name || 'Player'}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingName((v) => !v)}
+                    className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-slate-200 transition hover:border-emerald-500/40 hover:text-white"
+                  >
+                    {isEditingName ? 'Close' : 'Edit'}
+                  </button>
+                  {renderAvatarBadge()}
+                </div>
+              </div>
+
+              {isEditingName && (
+                <>
+                  <label className="mb-2 block text-xs uppercase tracking-[0.2em] text-slate-500">Display Name</label>
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value.slice(0, 24))}
+                    placeholder="Your hacker alias"
+                    className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-3 text-sm font-semibold text-white placeholder-slate-500 transition-colors focus:border-emerald-400 focus:outline-none"
+                  />
+                </>
+              )}
+
+              {isEditingName ? (
+                <>
+                  <div className="mt-4 mb-2 grid grid-cols-3 gap-2 rounded-xl border border-slate-700 bg-slate-900/70 p-1">
+                    {['preset', 'gradient', 'icon'].map((tab) => (
+                      <button
+                        key={tab}
+                        onClick={() => setAvatarTab(tab)}
+                        className={`rounded-lg py-1.5 text-[11px] font-black uppercase tracking-[0.16em] transition ${
+                          avatarTab === tab ? 'bg-emerald-400 text-black' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                        }`}
+                      >
+                        {tab}
+                      </button>
+                    ))}
+                  </div>
+
+                  {avatarTab === 'preset' && (
+                    <div className="grid grid-cols-4 gap-2">
+                      {PRESET_AVATARS.map((presetId) => (
+                        hiddenPresetPaths.has(presetId) ? null :
+                        <button
+                          key={presetId}
+                          onClick={() => setAvatarObject({ type: 'preset', value: presetId })}
+                          className={`rounded-xl border p-1 transition ${
+                            avatarObject.type === 'preset' && avatarObject.value === presetId
+                              ? 'border-emerald-400 ring-2 ring-emerald-500/40'
+                              : 'border-slate-700 hover:border-slate-500'
+                          }`}
+                          style={{ background: 'linear-gradient(145deg, #0f172a 0%, #1e293b 100%)' }}
+                        >
+                          <img
+                            src={resolvePresetPath(presetId)}
+                            alt={`Avatar preset ${presetId}`}
+                            onError={() => {
+                              setHiddenPresetPaths((prev) => {
+                                const next = new Set(prev);
+                                next.add(presetId);
+                                return next;
+                              });
+                            }}
+                            className="h-14 w-full rounded-lg object-contain p-1 drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)] overflow-hidden"
+                          />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {avatarTab === 'gradient' && (
+                    <div className="grid grid-cols-4 gap-2">
+                      {GRADIENT_AVATARS.map((entry) => (
+                        <button
+                          key={entry.value}
+                          onClick={() => setAvatarObject({ type: 'gradient', value: entry.value })}
+                          className={`rounded-xl border p-2 transition ${
+                            avatarObject.type === 'gradient' && avatarObject.value === entry.value
+                              ? 'border-emerald-400 ring-2 ring-emerald-500/40'
+                              : 'border-slate-700 hover:border-slate-500'
+                          }`}
+                        >
+                          <div className={`h-10 w-10 mx-auto rounded-full border border-white/20 ${entry.className}`} />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {avatarTab === 'icon' && (
+                    <div className="grid grid-cols-4 gap-2">
+                      {ICON_AVATARS.map((entry) => {
+                        const AvatarIcon = entry.Icon;
+                        const selectedIcon = avatarObject.type === 'icon' && avatarObject.value === entry.value;
+                        return (
+                          <button
+                            key={entry.value}
+                            onClick={() => setAvatarObject({ type: 'icon', value: entry.value })}
+                            className={`rounded-xl border p-2 transition ${
+                              selectedIcon
+                                ? 'border-emerald-400 bg-emerald-500/15 ring-2 ring-emerald-500/40 text-emerald-200'
+                                : 'border-slate-700 text-slate-300 hover:border-slate-500'
+                            }`}
+                          >
+                            <div className="h-10 w-10 mx-auto rounded-full border border-current/30 flex items-center justify-center">
+                              <AvatarIcon size={20} strokeWidth={2.3} />
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  <button
+                    onClick={handleSaveProfile}
+                    className="mt-4 w-full rounded-xl bg-emerald-400 py-3 text-sm font-black tracking-[0.16em] text-black transition-all duration-150 hover:-translate-y-0.5 hover:bg-emerald-300 active:translate-y-0 active:scale-95"
+                  >
+                    SAVE PROFILE
+                  </button>
+                </>
+              ) : (
+                <p className="mt-3 text-xs text-slate-500">Click Edit to change your name or profile picture.</p>
+              )}
+            {profileSaved && (
+              <p className="mt-2 text-center text-xs text-emerald-300">Profile saved.</p>
+            )}
+          </div>
+        </section>
+
         <div className="w-full max-w-md mt-4 rounded-2xl border border-slate-800 bg-slate-900/70 p-3">
-          <Chat socket={socketRef.current} roomPin={pin} title="Lobby Chat" />
+          <Chat socket={socketRef.current} roomPin={pin} title="Lobby Chat" initialMode={chatMode} initialAllowed={chatAllowed} />
         </div>
       </div>
     );

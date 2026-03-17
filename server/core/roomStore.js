@@ -11,6 +11,7 @@
  *   players  : Array<{          // joined players
  *     id    : string,           // socket.id
  *     name  : string,
+ *     avatarObject: { type: 'gradient' | 'icon' | 'preset', value: string },
  *     score : number,
  *   }>,
  *   status   : 'lobby' | 'started' | 'finished',
@@ -79,7 +80,7 @@ function deleteRoom(pin) {
  * Add a player to a room, ignoring duplicates (idempotent).
  *
  * @param {string} pin
- * @param {{ id: string, name: string }} player
+ * @param {{ id: string, name: string, avatarObject?: { type: string, value: string } }} player
  * @returns {boolean} true if player was newly added, false if already present
  */
 function addPlayer(pin, player) {
@@ -89,7 +90,12 @@ function addPlayer(pin, player) {
   const exists = room.players.some((p) => p.id === player.id);
   if (exists) return false;
 
-  room.players.push({ id: player.id, name: player.name, score: 0 });
+  room.players.push({
+    id: player.id,
+    name: player.name,
+    avatarObject: player.avatarObject || { type: 'gradient', value: 'emerald' },
+    score: 0,
+  });
   return true;
 }
 

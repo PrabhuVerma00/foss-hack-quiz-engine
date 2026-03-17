@@ -2,9 +2,36 @@
 import Chat from './Chat';
 import { createGameSocket, getBackendUrl } from '../backendUrl';
 import { QRCodeSVG } from 'qrcode.react';
+import { Rocket, Shield, Zap, Flame } from 'lucide-react';
 
 const HOST_SESSION_KEY = 'lf_host_session_id';
 const HOST_STATE_KEY = 'lf_host_state';
+const HOST_ICON_AVATARS = {
+  rocket: Rocket,
+  shield: Shield,
+  zap: Zap,
+  flame: Flame,
+};
+const HOST_GRADIENT_AVATARS = {
+  emerald: 'bg-gradient-to-br from-emerald-300 via-emerald-500 to-teal-600',
+  sunset: 'bg-gradient-to-br from-amber-300 via-orange-500 to-rose-600',
+  ocean: 'bg-gradient-to-br from-cyan-300 via-sky-500 to-indigo-700',
+  neon: 'bg-gradient-to-br from-lime-300 via-green-500 to-emerald-700',
+};
+
+function normalizeAvatarObject(input) {
+  if (!input || typeof input !== 'object') return { type: 'gradient', value: 'emerald' };
+  if (!['preset', 'gradient', 'icon'].includes(input.type)) return { type: 'gradient', value: 'emerald' };
+  const value = String(input.value || '').trim();
+  if (!value) return { type: 'gradient', value: 'emerald' };
+  return { type: input.type, value };
+}
+
+function presetPath(value) {
+  const cleaned = String(value || '').trim();
+  if (!cleaned) return '/avatars/1.png';
+  return cleaned.includes('.') ? `/avatars/${cleaned}` : `/avatars/${cleaned}.png`;
+}
 
 function getOrCreateHostSessionId() {
   if (typeof window === 'undefined') return '';
@@ -64,9 +91,11 @@ export default function Host({ onBack, studioQuestions = null }) {
   const [copied, setCopied] = useState(false);
   const [availableDecks, setAvailableDecks] = useState([]);
   const [deckLabel, setDeckLabel] = useState('Default');
+  const [recentlyUpdatedPlayerIds, setRecentlyUpdatedPlayerIds] = useState(new Set());
   const [timeLeft, setTimeLeft] = useState(0);
   const [timeTotal, setTimeTotal] = useState(0);
   const [questionEndsAt, setQuestionEndsAt] = useState(0);
+  const profilePulseTimersRef = useRef(new Map());
   const modeOptions = ['FREE', 'RESTRICTED', 'OFF'];
   const modeLabels = { FREE: 'OPEN', RESTRICTED: 'GUIDED', OFF: 'SILENT' };
 
@@ -135,6 +164,30 @@ export default function Host({ onBack, studioQuestions = null }) {
     socket.on('chat:mode', ({ mode, allowed }) => { setChatMode(mode); if (allowed) setAllowedList(allowed); });
     
     socket.on('player_joined', ({ players }) => setPlayers(players));
+    socket.on('player:profileUpdated', ({ player, players }) => {
+      if (Array.isArray(players)) setPlayers(players);
+      if (!player?.id) return;
+
+      setRecentlyUpdatedPlayerIds((prev) => {
+        const next = new Set(prev);
+        next.add(player.id);
+        return next;
+      });
+
+      const existing = profilePulseTimersRef.current.get(player.id);
+      if (existing) window.clearTimeout(existing);
+
+      const timer = window.setTimeout(() => {
+        setRecentlyUpdatedPlayerIds((prev) => {
+          const next = new Set(prev);
+          next.delete(player.id);
+          return next;
+        });
+        profilePulseTimersRef.current.delete(player.id);
+      }, 1400);
+
+      profilePulseTimersRef.current.set(player.id, timer);
+    });
     socket.on('room_closed', ({ message }) => { setError(message); setPhase('setup'); setPin(null); clearHostState(); });
     socket.on('game_started', () => setPhase('question'));
     socket.on('next_question', ({ question, index, total, durationMs, endsAt }) => {
@@ -168,7 +221,11 @@ export default function Host({ onBack, studioQuestions = null }) {
         return next;
       });
     });
-    return () => socket.disconnect();
+    return () => {
+      profilePulseTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+      profilePulseTimersRef.current.clear();
+      socket.disconnect();
+    };
   }, []);
 
   useEffect(() => {
@@ -294,6 +351,41 @@ export default function Host({ onBack, studioQuestions = null }) {
     }
     clearHostState();
     onBack?.();
+  };
+
+  const renderLobbyAvatar = (player) => {
+    const avatarObject = normalizeAvatarObject(player?.avatarObject);
+    if (avatarObject.type === 'preset') {
+      return (
+        <div className="relative mx-auto mb-2 flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-slate-600 bg-gradient-to-br from-slate-900 to-slate-700 p-1">
+          <img
+            src={presetPath(avatarObject.value)}
+            alt={`${player?.name || 'Player'} avatar`}
+            onError={(event) => {
+              event.currentTarget.style.display = 'none';
+              const fallback = event.currentTarget.nextElementSibling;
+              if (fallback) fallback.style.opacity = '1';
+            }}
+            className="h-full w-full rounded-full object-contain drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]"
+          />
+          <span className="absolute inset-0 flex items-center justify-center text-xs font-black text-emerald-200 opacity-0 transition-opacity duration-200">
+            {player?.name?.charAt(0)?.toUpperCase() || '?'}
+          </span>
+        </div>
+      );
+    }
+
+    if (avatarObject.type === 'icon') {
+      const AvatarIcon = HOST_ICON_AVATARS[avatarObject.value] || Rocket;
+      return (
+        <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full border border-emerald-500/40 bg-emerald-500/15 text-emerald-200">
+          <AvatarIcon size={20} strokeWidth={2.3} />
+        </div>
+      );
+    }
+
+    const gradientClass = HOST_GRADIENT_AVATARS[avatarObject.value] || HOST_GRADIENT_AVATARS.emerald;
+    return <div className={`mx-auto mb-2 h-10 w-10 rounded-full border border-white/20 ${gradientClass}`} />;
   };
 
   if (phase === 'gameover') {
@@ -555,11 +647,13 @@ export default function Host({ onBack, studioQuestions = null }) {
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
                   {players.map((p, i) => (
                     <div key={p.id} className="group relative animate-slide-in" style={{ animationDelay: `${i * 40}ms` }}>
-                      <div className="rounded-2xl border border-slate-700 bg-slate-950/80 p-3 text-center transition-all duration-200 hover:-translate-y-0.5 hover:border-emerald-500/50">
-                        <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/20 text-sm font-black text-emerald-200">
-                          {p.name?.charAt(0)?.toUpperCase() || '?'}
-                        </div>
-                        <p className="truncate text-sm font-semibold text-slate-200">{p.name}</p>
+                      <div className={`rounded-2xl border bg-slate-950/80 p-3 text-center transition-all duration-500 ease-out hover:-translate-y-0.5 ${
+                        recentlyUpdatedPlayerIds.has(p.id)
+                          ? 'border-emerald-400 ring-4 ring-emerald-500/30 shadow-[0_0_28px_rgba(16,185,129,0.25)] animate-pulse'
+                          : 'border-slate-700 hover:border-emerald-500/50'
+                      }`}>
+                        {renderLobbyAvatar(p)}
+                        <p className={`truncate text-sm font-semibold ${recentlyUpdatedPlayerIds.has(p.id) ? 'text-emerald-200' : 'text-slate-200'}`}>{p.name}</p>
                         <p className="mt-1 text-xs text-slate-500">#{i + 1}</p>
                         <div className="mt-3 flex items-center justify-center gap-2">
                           {mutedSet.has(p.id) ? (

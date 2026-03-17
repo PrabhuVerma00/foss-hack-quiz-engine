@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 
-export default function Chat({ socket, roomPin, readOnly = false, title = 'Chat', allowHostActions = false, onHostMute, mutedSet = new Set() }) {
-  const [mode, setMode] = useState('FREE');
-  const [allowed, setAllowed] = useState([]);
+export default function Chat({ socket, roomPin, readOnly = false, title = 'Chat', allowHostActions = false, onHostMute, mutedSet = new Set(), initialMode = 'FREE', initialAllowed = [] }) {
+  const [mode, setMode] = useState(initialMode || 'FREE');
+  const [allowed, setAllowed] = useState(Array.isArray(initialAllowed) ? initialAllowed : []);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [muted, setMuted] = useState(false);
@@ -36,6 +36,14 @@ export default function Chat({ socket, roomPin, readOnly = false, title = 'Chat'
       socket.off('chat:unmuted', handleUnmuted);
     };
   }, [socket]);
+
+  useEffect(() => {
+    if (initialMode) setMode(initialMode);
+  }, [initialMode]);
+
+  useEffect(() => {
+    if (Array.isArray(initialAllowed)) setAllowed(initialAllowed);
+  }, [initialAllowed]);
 
   useEffect(() => {
     if (!feedback) return undefined;
