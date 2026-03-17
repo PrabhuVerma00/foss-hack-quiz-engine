@@ -1,7 +1,7 @@
 import usePing from '../hooks/usePing';
 
-export default function PingIndicator() {
-  const { latencyMs, connected } = usePing(2000);
+export default function PingIndicator({ socket = null, className = '' }) {
+  const { latencyMs, connected } = usePing(socket, 2000);
 
   let toneClasses = 'text-slate-300';
   let dotClasses = 'bg-slate-400';
@@ -19,7 +19,7 @@ export default function PingIndicator() {
   }
 
   return (
-    <div className="fixed right-3 top-3 z-50 rounded-full border border-slate-700 bg-slate-900/85 px-3 py-1.5 backdrop-blur">
+    <div className={`rounded-full border border-slate-700 bg-slate-900/85 px-3 py-1.5 backdrop-blur ${className}`}>
       <div className="flex items-center gap-2">
         <span className={`h-2.5 w-2.5 rounded-full transition-all duration-200 ${connected ? dotClasses : 'bg-slate-500'}`} />
         <span className={`text-xs font-mono tabular-nums ${connected ? toneClasses : 'text-slate-400'}`}>

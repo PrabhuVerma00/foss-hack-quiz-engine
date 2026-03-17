@@ -1,16 +1,32 @@
 import { useEffect, useRef, useState } from 'react';
 import { createGameSocket } from '../backendUrl';
 
-export default function usePing(intervalMs = 2000) {
-  const socketRef = useRef(null);
+export default function usePing(socket, intervalMs = 2000) {
+  const ownedSocketRef = useRef(null);
   const [latencyMs, setLatencyMs] = useState(null);
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
-    const socket = createGameSocket();
-    socketRef.current = socket;
+    const targetSocket = socket || createGameSocket();
+    const isOwnedSocket = !socket;
+    if (isOwnedSocket) {
+      ownedSocketRef.current = targetSocket;
+    }
 
-    const handleConnect = () => setConnected(true);
+    const sendPing = () => {
+      if (!targetSocket.connected) return;
+      const timestamp = Date.now();
+      targetSocket.emit('client:ping', { timestamp }, (ack) => {
+        const echoed = Number(ack?.timestamp);
+        if (!Number.isFinite(echoed)) return;
+        setLatencyMs(Math.max(0, Date.now() - echoed));
+      });
+    };
+
+    const handleConnect = () => {
+      setConnected(true);
+      sendPing();
+    };
     const handleDisconnect = () => {
       setConnected(false);
       setLatencyMs(null);
@@ -21,23 +37,25 @@ export default function usePing(intervalMs = 2000) {
       setLatencyMs(Math.max(0, Date.now() - sentAt));
     };
 
-    socket.on('connect', handleConnect);
-    socket.on('disconnect', handleDisconnect);
-    socket.on('server:pong', handlePong);
+    setConnected(Boolean(targetSocket.connected));
+    targetSocket.on('connect', handleConnect);
+    targetSocket.on('disconnect', handleDisconnect);
+    targetSocket.on('server:pong', handlePong);
 
     const timer = window.setInterval(() => {
-      if (!socket.connected) return;
-      socket.emit('client:ping', { timestamp: Date.now() });
+      sendPing();
     }, intervalMs);
 
     return () => {
       window.clearInterval(timer);
-      socket.off('connect', handleConnect);
-      socket.off('disconnect', handleDisconnect);
-      socket.off('server:pong', handlePong);
-      socket.disconnect();
+      targetSocket.off('connect', handleConnect);
+      targetSocket.off('disconnect', handleDisconnect);
+      targetSocket.off('server:pong', handlePong);
+      if (isOwnedSocket) {
+        targetSocket.disconnect();
+      }
     };
-  }, [intervalMs]);
+  }, [socket, intervalMs]);
 
   return { latencyMs, connected };
 }

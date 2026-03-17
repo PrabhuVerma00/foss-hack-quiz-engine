@@ -121,8 +121,9 @@ function registerHandlers(socket, io, questions) {
   }
 
   // ── client:ping ────────────────────────────────────────────────────────
-  socket.on('client:ping', ({ timestamp } = {}) => {
+  socket.on('client:ping', ({ timestamp } = {}, callback) => {
     socket.emit('server:pong', { timestamp });
+    callback?.({ timestamp });
   });
 
   // ── create_room ─────────────────────────────────────────────────────────

@@ -3,6 +3,7 @@ import Chat from './Chat';
 import { createGameSocket, getBackendUrl } from '../backendUrl';
 import { QRCodeSVG } from 'qrcode.react';
 import { Rocket, Shield, Zap, Flame } from 'lucide-react';
+import PingIndicator from './PingIndicator';
 
 const HOST_SESSION_KEY = 'lf_host_session_id';
 const HOST_STATE_KEY = 'lf_host_state';
@@ -70,6 +71,7 @@ export default function Host({ onBack, studioQuestions = null }) {
   const hostSessionIdRef = useRef(getOrCreateHostSessionId());
   const resumeAttemptedRef = useRef(false);
   const socketRef = useRef(null);
+  const [hostSocket, setHostSocket] = useState(null);
   const [connected, setConnected] = useState(false);
   const [roomName, setRoomName] = useState(savedHostState?.roomName || '');
   const [pin, setPin] = useState(savedHostState?.pin || null);
@@ -114,6 +116,7 @@ export default function Host({ onBack, studioQuestions = null }) {
   useEffect(() => {
     const socket = createGameSocket();
     socketRef.current = socket;
+    setHostSocket(socket);
     socket.on('connect', () => {
       setConnected(true);
 
@@ -224,6 +227,7 @@ export default function Host({ onBack, studioQuestions = null }) {
     return () => {
       profilePulseTimersRef.current.forEach((timer) => window.clearTimeout(timer));
       profilePulseTimersRef.current.clear();
+      setHostSocket(null);
       socket.disconnect();
     };
   }, []);
@@ -572,9 +576,12 @@ export default function Host({ onBack, studioQuestions = null }) {
               </div>
               <div className="ml-4 text-xs uppercase tracking-[0.2em] text-slate-500">Host Dashboard</div>
             </div>
-            <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2">
+            <div className="flex items-center gap-2">
+              <PingIndicator socket={hostSocket} />
+              <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2">
               <div className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
               <span className="text-xs font-semibold text-emerald-300">Session Active</span>
+              </div>
             </div>
             </header>
 
