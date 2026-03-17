@@ -120,6 +120,11 @@ function registerHandlers(socket, io, questions) {
     chatInstance = new ChatManager(io);
   }
 
+  // ── client:ping ────────────────────────────────────────────────────────
+  socket.on('client:ping', ({ timestamp } = {}) => {
+    socket.emit('server:pong', { timestamp });
+  });
+
   // ── create_room ─────────────────────────────────────────────────────────
   socket.on('create_room', ({ roomName, deckQuestions, hostSessionId }, callback) => {
     if (!roomName || !roomName.trim()) {
