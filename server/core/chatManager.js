@@ -30,7 +30,7 @@ const DEFAULT_ALLOWED = [
 class ChatManager {
   constructor(io, opts = {}) {
     this.io = io;
-    this.mode = opts.mode || 'FREE'; // FREE | RESTRICTED | OFF
+    this.mode = opts.mode || 'RESTRICTED'; // FREE | RESTRICTED | OFF
     this.allowed = opts.allowedMessages || DEFAULT_ALLOWED;
     this.rateMap = new Map(); // socketId -> { tokens, last }
     this.warns = new Map();

@@ -4,7 +4,8 @@
   "description": "LocalFlux game server",
   "main": "server.js",
   "scripts": {
-    "dev": "nodemon server.js",
+    "dev": "node --watch server.js",
+    "start": "node server.js",
     "test": "jest --runInBand",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage"

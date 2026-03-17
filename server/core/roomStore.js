@@ -6,7 +6,8 @@
  * Room shape:
  * {
  *   roomName : string,
- *   hostId   : string,          // socket.id of the host
+ *   hostId   : string|null,     // socket.id of the host
+ *   hostSessionId : string|null,// stable host session for reconnect/reclaim
  *   players  : Array<{          // joined players
  *     id    : string,           // socket.id
  *     name  : string,
@@ -40,13 +41,15 @@ function generatePIN() {
  *
  * @param {string} roomName
  * @param {string} hostId - socket.id of the creating host
+ * @param {string|null} [hostSessionId] - stable browser session id for host recovery
  * @returns {string} 4-digit PIN
  */
-function createRoom(roomName, hostId) {
+function createRoom(roomName, hostId, hostSessionId = null) {
   const pin = generatePIN();
   rooms[pin] = {
     roomName,
     hostId,
+    hostSessionId,
     players: [],
     status: 'lobby',
     currentQ: -1,
@@ -114,7 +117,7 @@ function removePlayer(socketId) {
  */
 function findHostPin(socketId) {
   for (const pin in rooms) {
-    if (rooms[pin].hostId === socketId) return pin;
+    if (rooms[pin].hostId && rooms[pin].hostId === socketId) return pin;
   }
   return null;
 }
