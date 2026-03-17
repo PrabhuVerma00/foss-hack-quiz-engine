@@ -32,7 +32,10 @@ local subnet — latency measured in single-digit milliseconds, not hundreds.
 | **Server-side scoring** | +100 pts per correct answer; answers validated on the server, never the client |
 | **LAN play** | Any device on the same Wi-Fi — phones, tablets, laptops |
 | **Deck format** | JSON schema with `text_only` and `image_guess` types, per-question time limits, fuzzy-match variants |
-| **Unit tests** | 44 Jest tests covering `deckLoader`, `roomStore`, and `gameEngine` |
+| **Deck Studio** | Browser-based deck editor with CSV import, validation, and .flux export |
+| **In-room chat** | Host-managed chat modes (Open, Guided, Silent) with moderation controls |
+| **Session recovery** | Host and player reconnect recovery after accidental refresh/disconnect |
+| **Unit tests** | 48 Jest tests covering core gameplay and chat moderation |
 
 ## What is planned
 
@@ -43,5 +46,3 @@ These features are designed and documented but not yet implemented:
 | **VIP Bouncer** | Connection queue with soft/hard player caps to protect the router | [→](/guide/vip-bounce) |
 | **Difficulty Engine** | Per-question scoring multipliers and time pressure modes | [→](/guide/difficulty-engine) |
 | **Accolades** | Post-game achievement badges (Speed Demon, Comeback Kid, etc.) | — |
-| **Deck Studio** | Browser-based deck builder in the Host Dashboard | — |
-| **In-room chat** | Real-time system and player messages during the match | — |

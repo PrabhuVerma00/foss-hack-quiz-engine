@@ -10,11 +10,14 @@ hero:
     to every player in the room.
   actions:
     - theme: brand
+      text: Get Started
+      link: /guide/get-started
+    - theme: alt
       text: What is LocalFlux?
       link: /guide/what-is-localflux
     - theme: alt
       text: View on GitHub
-      link: https://github.com/Unknownbeliek/foss-hack-quiz-engine
+      link: https://github.com/Unknownbeliek/localflux
 
 features:
   -
@@ -39,7 +42,7 @@ features:
 ---
 
 ::: tip ✅ Released — LocalFlux v1.0.0
-LocalFlux **v1.0.0 is now live** on the `main` branch and tagged as `v1.0.0`: [github.com/Unknownbeliek/localflux](https://github.com/Unknownbeliek/localflux).
+LocalFlux **v1.0.0 is now live** on the main branch and tagged as v1.0.0: [github.com/Unknownbeliek/localflux](https://github.com/Unknownbeliek/localflux).
 Core gameplay is production-ready: room creation, live lobby, full quiz loop, real-time chat controls, Deck Studio, and host/player reconnect recovery.
 :::
 
@@ -75,3 +78,11 @@ room PIN, and the game begins.
 | Accolades / post-game badges | Planned |
 | Deck Studio (browser-based editor) | Done |
 | In-room chat | Done |
+
+## New here?
+
+Start with the guided setup:
+
+- [Get Started](/guide/get-started)
+- [Architecture](/guide/architecture)
+- [Deck Schema](/guide/deck-schema)

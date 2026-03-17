@@ -8,13 +8,15 @@ export default defineConfig({
   themeConfig: {
     nav: [
       { text: 'Home', link: '/' },
+      { text: 'Get Started', link: '/guide/get-started' },
       { text: 'Guide', link: '/guide/what-is-localflux' },
     ],
 
     sidebar: [
       {
-        text: 'Introduction',
+        text: 'Start Here',
         items: [
+          { text: 'Get Started', link: '/guide/get-started' },
           { text: 'What is LocalFlux?', link: '/guide/what-is-localflux' },
         ]
       },
@@ -36,7 +38,7 @@ export default defineConfig({
     ],
 
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/Unknownbeliek/foss-hack-quiz-engine' }
+      { icon: 'github', link: 'https://github.com/Unknownbeliek/localflux' }
     ],
 
     footer: {
