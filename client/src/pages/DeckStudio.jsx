@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useDeckStudioStore } from '../deckStudio/store';
 import { fetchCloudDecks, downloadDeckToLocal } from '../deckStudio/cloudCatalog';
 import CloudDeckCard from '../components/CloudDeckCard';
@@ -57,35 +57,28 @@ export default function DeckStudio({ onBack, onHostDeck }) {
     initDraft();
   }, [initDraft]);
 
-  useEffect(() => {
-    let active = true;
-
-    const loadCloudCatalog = async () => {
-      setCloudStatus('loading');
-      setCloudError('');
-      try {
-        const decks = await fetchCloudDecks();
-        if (!active) return;
-        setCloudDecks(decks);
-        setCloudStatus('ready');
-      } catch (err) {
-        if (!active) return;
-        const message = String(err?.message || '').toLowerCase();
-        const isOffline =
-          message.includes('failed to fetch') ||
-          message.includes('network') ||
-          message.includes('offline');
-        setCloudDecks([]);
-        setCloudStatus(isOffline ? 'offline' : 'error');
-        setCloudError(err?.message || 'Unable to load cloud decks.');
-      }
-    };
-
-    loadCloudCatalog();
-    return () => {
-      active = false;
-    };
+  const loadCloudCatalog = useCallback(async () => {
+    setCloudStatus('loading');
+    setCloudError('');
+    try {
+      const decks = await fetchCloudDecks();
+      setCloudDecks(decks);
+      setCloudStatus('ready');
+    } catch (err) {
+      const message = String(err?.message || '').toLowerCase();
+      const isOffline =
+        message.includes('failed to fetch') ||
+        message.includes('network') ||
+        message.includes('offline');
+      setCloudDecks([]);
+      setCloudStatus(isOffline ? 'offline' : 'error');
+      setCloudError(err?.message || 'Unable to load cloud decks.');
+    }
   }, []);
+
+  useEffect(() => {
+    loadCloudCatalog();
+  }, [loadCloudCatalog]);
 
   useEffect(() => {
     const onKeyDown = (event) => {
@@ -364,11 +357,20 @@ export default function DeckStudio({ onBack, onHostDeck }) {
             <div className="rounded-2xl border border-slate-800 bg-slate-900/75 p-4 shadow-2xl shadow-black/30">
               <div className="mb-3 flex items-center justify-between">
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Explore Cloud Decks</p>
-                {cloudStatus === 'offline' && (
-                  <span className="rounded-full border border-amber-400/40 bg-amber-400/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-amber-200">
-                    Offline Mode
-                  </span>
-                )}
+                <div className="flex items-center gap-2">
+                  {(cloudStatus === 'offline' || cloudStatus === 'error') && (
+                    <span className="rounded-full border border-amber-400/40 bg-amber-400/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-amber-200">
+                      Offline Mode
+                    </span>
+                  )}
+                  <button
+                    onClick={loadCloudCatalog}
+                    disabled={cloudStatus === 'loading'}
+                    className="rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-200 transition hover:border-emerald-500/50 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {cloudStatus === 'loading' ? 'Retrying...' : 'Retry'}
+                  </button>
+                </div>
               </div>
 
               {cloudStatus === 'loading' && (
