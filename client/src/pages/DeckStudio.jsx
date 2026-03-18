@@ -234,9 +234,74 @@ export default function DeckStudio({ onBack, onHostDeck }) {
       </aside>
 
       <main className="flex-1 bg-slate-900 flex flex-col items-center justify-center p-8">
-        <div className="w-full max-w-5xl rounded-2xl border border-slate-700 bg-slate-800/50 p-8 text-center">
-          <p className="text-sm font-semibold uppercase tracking-wide text-slate-400">WYSIWYG Canvas</p>
-          <p className="mt-2 text-2xl font-black">Question editor canvas placeholder</p>
+        <div className="w-full max-w-5xl space-y-5 rounded-3xl border border-slate-700 bg-slate-800/70 p-8 shadow-2xl shadow-black/30">
+          <div>
+            <input
+              value={activeSlide?.prompt || ''}
+              onChange={(e) => activeSlide && updatePrompt(activeSlide.id, e.target.value)}
+              placeholder="Type your question here"
+              className="w-full bg-transparent text-center text-4xl font-black tracking-tight text-white placeholder:text-slate-500 focus:outline-none"
+            />
+            {activeErrors.prompt && <p className="mt-2 text-center text-sm text-rose-300">{activeErrors.prompt}</p>}
+          </div>
+
+          <div className="rounded-2xl border-2 border-dashed border-slate-600 bg-slate-900/50 p-6">
+            <p className="mb-3 text-center text-xs font-semibold uppercase tracking-wide text-slate-400">
+              Image Placeholder
+            </p>
+            <input
+              value={activeSlide?.imageUrl || ''}
+              onChange={(e) => activeSlide && updateImageUrl(activeSlide.id, e.target.value)}
+              placeholder="Paste image URL or future dropzone"
+              className="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-400/60"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {(activeSlide?.options || ['', '', '', '']).map((option, optionIndex) => {
+              const optionStyles = [
+                'bg-red-500/90 border-red-300/70',
+                'bg-blue-500/90 border-blue-300/70',
+                'bg-yellow-400/95 border-yellow-200/70 text-slate-950',
+                'bg-green-500/90 border-green-300/70',
+              ];
+              const isCorrect = activeSlide?.correctIndex === optionIndex;
+
+              return (
+                <div
+                  key={`${activeSlide?.id || 'none'}_${optionIndex}`}
+                  className={`rounded-2xl border-2 p-4 ${optionStyles[optionIndex]}`}
+                >
+                  <div className="mb-3 flex items-center justify-between">
+                    <label className="text-xs font-black uppercase tracking-wide">Option {optionIndex + 1}</label>
+                    <label className="inline-flex items-center gap-1 text-xs font-bold uppercase tracking-wide">
+                      <input
+                        type="radio"
+                        name="correctOption"
+                        checked={isCorrect}
+                        onChange={() => activeSlide && setCorrectIndex(activeSlide.id, optionIndex)}
+                        className="h-4 w-4"
+                      />
+                      Correct
+                    </label>
+                  </div>
+                  <input
+                    value={option}
+                    onChange={(e) => activeSlide && updateOption(activeSlide.id, optionIndex, e.target.value)}
+                    placeholder={`Answer ${optionIndex + 1}`}
+                    className="w-full rounded-lg border border-white/40 bg-black/20 px-3 py-2 text-sm font-semibold text-white placeholder:text-white/70 focus:outline-none focus:ring-2 focus:ring-white/70"
+                  />
+                  {isCorrect && (
+                    <p className="mt-2 text-[11px] font-black uppercase tracking-wide text-white">
+                      Correct Answer
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {activeErrors.options && <p className="text-center text-sm text-rose-300">{activeErrors.options}</p>}
         </div>
       </main>
 
