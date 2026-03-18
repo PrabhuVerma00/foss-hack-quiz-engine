@@ -426,7 +426,29 @@ export default function Host({ onBack, studioQuestions = null }) {
     return studioDecks.filter((draft) => String(draft?.title || '').toLowerCase().includes(q));
   }, [studioDecks, studioDeckQuery]);
 
-  const handleLoadMoreCloudDecks = () => {};
+  const handleLoadMoreCloudDecks = async () => {
+    if (cloudStatus === 'loading' || !isOnline) return;
+
+    setCloudStatus('loading');
+    setCloudError('');
+
+    try {
+      const decks = await fetchCloudDecks();
+      setCloudDecks((prev) => {
+        const byId = new Map(prev.map((deck) => [deck.id, deck]));
+        decks.forEach((deck) => {
+          byId.set(deck.id, deck);
+        });
+        return Array.from(byId.values());
+      });
+      setCloudStatus('ready');
+    } catch {
+      setCloudStatus('error');
+      setCloudError('Failed to reach cloud catalog.');
+    } finally {
+      setHasFetchedCloudCatalog(true);
+    }
+  };
 
   const emitSelectedDeck = (deckName, deckSource, deckQuestions) => {
     if (!socketRef.current?.connected) {
@@ -1427,9 +1449,13 @@ export default function Host({ onBack, studioQuestions = null }) {
                     {!hasFetchedCloudCatalog && isOnline && (
                       <button
                         onClick={handleLoadMoreCloudDecks}
-                        className="mt-2 w-full rounded-lg border border-sky-400/40 bg-sky-400/10 px-2 py-2 text-xs font-semibold text-sky-200 transition hover:bg-sky-400/20"
+                        disabled={cloudStatus === 'loading'}
+                        className="mt-2 w-full rounded-lg border border-sky-400/40 bg-sky-400/10 px-2 py-2 text-xs font-semibold text-sky-200 transition hover:bg-sky-400/20 disabled:cursor-not-allowed disabled:opacity-60"
                       >
-                        ☁️ Load More from Cloud
+                        <span className="inline-flex items-center gap-2">
+                          {cloudStatus === 'loading' && <span className="h-3 w-3 animate-spin rounded-full border-2 border-sky-200/40 border-t-sky-100" />}
+                          {cloudStatus === 'loading' ? 'Loading Cloud Decks...' : '☁️ Load More from Cloud'}
+                        </span>
                       </button>
                     )}
                     {!isOnline && (
