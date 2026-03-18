@@ -103,6 +103,7 @@ export default function Player({ onBack }) {
   const [finalScores, setFinalScores] = useState([]);
   const [chatMode, setChatMode] = useState('FREE');
   const [chatAllowed, setChatAllowed] = useState([]);
+  const [isLobbyDeckReady, setIsLobbyDeckReady] = useState(false);
   const [timeLeft, setTimeLeft] = useState(0);
   const [timeTotal, setTimeTotal] = useState(0);
   const [questionEndsAt, setQuestionEndsAt] = useState(0);
@@ -142,6 +143,7 @@ export default function Player({ onBack }) {
           setRoomName(res.roomName || 'LocalFlux Game');
           if (res.chatMode) setChatMode(res.chatMode);
           if (Array.isArray(res.chatAllowed)) setChatAllowed(res.chatAllowed);
+          setIsLobbyDeckReady(Boolean(res.deckSelected));
           setMyScore(Number(res.myScore) || 0);
           setPhase('waiting');
         }
@@ -156,6 +158,13 @@ export default function Player({ onBack }) {
     socket.on('chat:mode', ({ mode, allowed }) => {
       if (mode) setChatMode(mode);
       if (Array.isArray(allowed)) setChatAllowed(allowed);
+    });
+    socket.on('room:deck_updated', ({ selected }) => {
+      if (typeof selected === 'boolean') {
+        setIsLobbyDeckReady(selected);
+        return;
+      }
+      setIsLobbyDeckReady(true);
     });
     socket.on('room_closed', ({ message }) => {
       setError(message || 'Room closed by host.');
@@ -438,6 +447,9 @@ export default function Player({ onBack }) {
         <button onClick={handleLeaveRoom} className="absolute top-5 left-5 rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-semibold tracking-wide text-slate-200 transition hover:bg-slate-800">Leave</button>
         <p className="text-3xl font-black tracking-tight">{roomName || 'Lobby'}</p>
         <p className="text-slate-400 text-sm font-mono">Waiting for host to start...</p>
+        <p className={`text-xs font-semibold ${isLobbyDeckReady ? 'text-emerald-300' : 'text-amber-300'}`}>
+          {isLobbyDeckReady ? 'Deck locked in! Get ready.' : 'Waiting for host to choose a deck...'}
+        </p>
         <p className={`text-xs font-mono mt-2 ${connected ? 'text-emerald-400' : 'text-amber-300'}`}>
           {connected ? 'connected' : 'reconnecting...'}
         </p>
