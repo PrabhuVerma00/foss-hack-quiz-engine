@@ -48,6 +48,28 @@ const hostDisconnectTimers = new Map();
 const PLAYER_RECONNECT_GRACE_MS = 45000;
 const pendingPlayerReconnect = new Map();
 const playerDisconnectTimers = new Map();
+let lastRoomClosedReason = null;
+let lastRoomClosedAt = 0;
+
+function markRoomClosed(reason) {
+  lastRoomClosedReason = reason;
+  lastRoomClosedAt = Date.now();
+}
+
+function getJoinUnavailableMessage() {
+  const isRecentClosure = lastRoomClosedAt > 0 && Date.now() - lastRoomClosedAt < 6 * 60 * 60 * 1000;
+  if (!isRecentClosure) {
+    return 'Room is not created yet. Wait for the host to create a room.';
+  }
+
+  if (lastRoomClosedReason === 'ended') {
+    return 'Room has ended. Wait for the host to create a new room.';
+  }
+  if (lastRoomClosedReason === 'host_disconnected') {
+    return 'Room closed because the host disconnected. Wait for the host to create a new room.';
+  }
+  return 'Room is not created yet. Wait for the host to create a room.';
+}
 
 function pickRandom(list) {
   if (!Array.isArray(list) || list.length === 0) return '';
@@ -203,6 +225,8 @@ function registerHandlers(socket, io, questions, tokenManager) {
       room.questions = [];
       room.deckMeta = null;
     }
+    lastRoomClosedReason = null;
+    lastRoomClosedAt = 0;
     socket.join(lanRoomId);
     socket.playerName = 'Host';
     console.log(`[Host] "${roomName}" initialized room — LAN_ROOM: ${lanRoomId}`);
@@ -298,7 +322,10 @@ function registerHandlers(socket, io, questions, tokenManager) {
   socket.on('join_room', ({ playerName, playerSessionId }, callback) => {
     const room = getRoom();
     if (!room) {
-      return callback({ success: false, error: 'Room not found. Ask host to create a room first.' });
+      return callback({ success: false, error: getJoinUnavailableMessage() });
+    }
+    if (room.status === 'finished') {
+      return callback({ success: false, error: 'Room has ended. Wait for the host to create a new room.' });
     }
     if (room.status !== 'lobby') {
       return callback({ success: false, error: 'Game already in progress.' });
@@ -327,12 +354,13 @@ function registerHandlers(socket, io, questions, tokenManager) {
 
   // ── join (LAN mode) ──────────────────────────────────────────────────────
   socket.on('join', ({ playerName, playerSessionId }, callback) => {
-    let room = getRoom();
-    
-    // Auto-initialize LAN_ROOM if it doesn't exist or game is finished
-    if (!room || room.status === 'finished') {
-      initLanRoom('LocalFlux Game', null, null);
-      room = getRoom();
+    const room = getRoom();
+
+    if (!room) {
+      return callback({ success: false, error: getJoinUnavailableMessage() });
+    }
+    if (room.status === 'finished') {
+      return callback({ success: false, error: 'Room has ended. Wait for the host to create a new room.' });
     }
 
     if (room.status !== 'lobby') {
@@ -529,6 +557,7 @@ function registerHandlers(socket, io, questions, tokenManager) {
 
       if (gameOver) {
         io.to(LAN_ROOM_ID).emit('game_over', gameOver);
+        markRoomClosed('ended');
         deleteRoom();
         console.log(`[Game] LAN_ROOM finished. Room deleted.`);
         return callback?.({ success: true, done: true });
@@ -656,6 +685,7 @@ function registerHandlers(socket, io, questions, tokenManager) {
         const liveRoom = getRoom();
         if (liveRoom && !liveRoom.hostId) {
           io.to(LAN_ROOM_ID).emit('room_closed', { message: 'Host disconnected.' });
+          markRoomClosed('host_disconnected');
           deleteRoom();
           console.log(`[Room] LAN_ROOM destroyed (host did not reconnect in time).`);
         }
