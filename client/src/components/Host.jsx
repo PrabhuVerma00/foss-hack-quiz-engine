@@ -187,8 +187,9 @@ export default function Host({ onBack, studioQuestions = null }) {
   const [_pendingDroppedDeck, setPendingDroppedDeck] = useState(null);
   const [dropNotice, setDropNotice] = useState('');
   const [cloudDecks, setCloudDecks] = useState([]);
-  const [cloudStatus, setCloudStatus] = useState('loading');
+  const [cloudStatus, setCloudStatus] = useState('idle');
   const [cloudError, setCloudError] = useState('');
+  const [hasFetchedCloudCatalog, setHasFetchedCloudCatalog] = useState(false);
   const [downloadingCloudDeckId, setDownloadingCloudDeckId] = useState('');
   const [recentlyUpdatedPlayerIds, setRecentlyUpdatedPlayerIds] = useState(new Set());
   const [timeLeft, setTimeLeft] = useState(0);
@@ -425,33 +426,7 @@ export default function Host({ onBack, studioQuestions = null }) {
     return studioDecks.filter((draft) => String(draft?.title || '').toLowerCase().includes(q));
   }, [studioDecks, studioDeckQuery]);
 
-  // Fetch cloud catalog for lobby explorer section
-  useEffect(() => {
-    let active = true;
-
-    const loadCloudCatalog = async () => {
-      setCloudStatus('loading');
-      setCloudError('');
-      try {
-        const decks = await fetchCloudDecks();
-        if (!active) return;
-        setCloudDecks(decks);
-        setCloudStatus('ready');
-      } catch (err) {
-        if (!active) return;
-        const message = String(err?.message || '').toLowerCase();
-        const isOffline = message.includes('failed to fetch') || message.includes('network') || message.includes('offline');
-        setCloudDecks([]);
-        setCloudStatus(isOffline ? 'offline' : 'error');
-        setCloudError(err?.message || 'Unable to load cloud deck catalog.');
-      }
-    };
-
-    loadCloudCatalog();
-    return () => {
-      active = false;
-    };
-  }, []);
+  const handleLoadMoreCloudDecks = () => {};
 
   const emitSelectedDeck = (deckName, deckSource, deckQuestions) => {
     if (!socketRef.current?.connected) {
@@ -1449,6 +1424,22 @@ export default function Host({ onBack, studioQuestions = null }) {
 
                   <div className="border-t border-slate-800 pt-4">
                     <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">Explore Cloud Decks</p>
+                    {!hasFetchedCloudCatalog && isOnline && (
+                      <button
+                        onClick={handleLoadMoreCloudDecks}
+                        className="mt-2 w-full rounded-lg border border-sky-400/40 bg-sky-400/10 px-2 py-2 text-xs font-semibold text-sky-200 transition hover:bg-sky-400/20"
+                      >
+                        ☁️ Load More from Cloud
+                      </button>
+                    )}
+                    {!isOnline && (
+                      <button
+                        disabled
+                        className="mt-2 w-full cursor-not-allowed rounded-lg border border-slate-700 bg-slate-900/60 px-2 py-2 text-xs font-semibold text-slate-400"
+                      >
+                        ☁️ Cloud Decks (No Internet Connection)
+                      </button>
+                    )}
                     {cloudStatus === 'loading' && <p className="mt-2 text-xs text-slate-500">Loading cloud catalog...</p>}
                     {cloudStatus === 'offline' && <p className="mt-2 text-xs text-amber-300">Offline mode: cloud decks unavailable.</p>}
                     {cloudStatus === 'error' && <p className="mt-2 text-xs text-rose-300">{cloudError}</p>}
