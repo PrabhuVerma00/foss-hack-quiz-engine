@@ -767,7 +767,7 @@ export default function Host({ onBack, studioQuestions = null }) {
                   <p>Active source: <span className="text-slate-300">{selectedDeckSource}</span></p>
                   <p>Question count: <span className="text-slate-300">{selectedDeckCount ?? '--'}</span></p>
                   <button
-                    onClick={() => { window.location.href = '/studio'; }}
+                    onClick={() => { window.location.href = hostToken ? `/studio?token=${encodeURIComponent(hostToken)}` : '/studio'; }}
                     className="mt-1 rounded-lg border border-amber-400/40 bg-amber-400/10 px-2.5 py-1 text-[11px] font-semibold text-amber-200 transition hover:bg-amber-400/20"
                   >
                     Explore More (Cloud + Studio)
@@ -964,7 +964,7 @@ export default function Host({ onBack, studioQuestions = null }) {
             <span>Questions: <span className="text-slate-300">{selectedDeckCount ?? '--'}</span></span>
           </div>
           <button
-            onClick={() => { window.location.href = '/studio'; }}
+            onClick={() => { window.location.href = hostToken ? `/studio?token=${encodeURIComponent(hostToken)}` : '/studio'; }}
             className="mt-2 w-full rounded-lg border border-amber-400/40 bg-amber-400/10 px-2.5 py-1.5 text-[11px] font-semibold text-amber-200 transition hover:bg-amber-400/20"
           >
             Open Studio (Build + Cloud)
