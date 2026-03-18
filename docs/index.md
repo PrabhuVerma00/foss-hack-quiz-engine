@@ -41,9 +41,9 @@ features:
       limits, and fuzzy-match allowances for spelling variants.
 ---
 
-::: tip ✅ Released — LocalFlux v1.0.0
-LocalFlux **v1.0.0 is now live** on the main branch and tagged as v1.0.0: [github.com/Unknownbeliek/localflux](https://github.com/Unknownbeliek/localflux).
-Core gameplay is production-ready: room creation, live lobby, full quiz loop, real-time chat controls, Deck Studio, and host/player reconnect recovery.
+::: warning ⚠️ Work In Progress
+LocalFlux is currently under active development and is **not production-ready yet**.
+Features and behavior may change while we finalize gameplay stability, UX polish, and deployment flow.
 :::
 
 ## How it works
