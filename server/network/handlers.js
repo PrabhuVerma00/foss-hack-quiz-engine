@@ -9,13 +9,14 @@
 'use strict';
 
 const {
+  LAN_ROOM_ID,
   rooms,
-  createRoom,
+  initLanRoom,
   getRoom,
   deleteRoom,
   addPlayer,
   removePlayer,
-  findHostPin,
+  getHostId,
 } = require('../core/roomStore');
 
 const { startGame, submitAnswer, advanceQuestion } = require('../core/gameEngine');
@@ -138,38 +139,38 @@ function registerHandlers(socket, io, questions) {
       return callback({ success: false, error: 'Invalid deck questions payload.' });
     }
 
-    const pin = createRoom(roomName.trim(), socket.id, hostSessionId || null);
-    if (customQuestions) {
-      const room = getRoom(pin);
-      if (room) room.questions = customQuestions;
+    const lanRoomId = initLanRoom(roomName.trim(), socket.id, hostSessionId || null);
+    const room = getRoom();
+    if (customQuestions && room) {
+      room.questions = customQuestions;
     }
-    socket.join(pin);
+    socket.join(lanRoomId);
     socket.playerName = 'Host';
-    console.log(`[Room] "${roomName}" created — PIN: ${pin}`);
+    console.log(`[Host] "${roomName}" initialized room — LAN_ROOM: ${lanRoomId}`);
     socket.emit('chat:mode', { mode: chatInstance.mode, allowed: chatInstance.allowed });
-    callback({ success: true, pin, deckSource: customQuestions ? 'studio' : 'default' });
+    callback({ success: true, pin: lanRoomId, deckSource: customQuestions ? 'studio' : 'default' });
   });
 
   // ── host:resume ─────────────────────────────────────────────────────────
   socket.on('host:resume', ({ pin, hostSessionId }, callback) => {
-    const room = getRoom(pin);
+    const room = getRoom();
     if (!room) return callback?.({ success: false, error: 'Room not found.' });
     if (!hostSessionId || room.hostSessionId !== hostSessionId) {
       return callback?.({ success: false, error: 'Session mismatch.' });
     }
 
-    const existingTimer = hostDisconnectTimers.get(pin);
+    const existingTimer = hostDisconnectTimers.get(LAN_ROOM_ID);
     if (existingTimer) {
       clearTimeout(existingTimer);
-      hostDisconnectTimers.delete(pin);
+      hostDisconnectTimers.delete(LAN_ROOM_ID);
     }
 
     room.hostId = socket.id;
-    socket.join(pin);
+    socket.join(LAN_ROOM_ID);
     socket.playerName = 'Host';
 
-    io.to(pin).emit('host_resumed', { message: 'Host reconnected.' });
-    io.to(pin).emit('player_joined', { players: room.players });
+    io.to(LAN_ROOM_ID).emit('host_resumed', { message: 'Host reconnected.' });
+    io.to(LAN_ROOM_ID).emit('player_joined', { players: room.players });
     socket.emit('chat:mode', { mode: chatInstance.mode, allowed: chatInstance.allowed });
 
     const roomQuestions = room.questions || questions;
@@ -199,7 +200,7 @@ function registerHandlers(socket, io, questions) {
 
   // ── join_room ────────────────────────────────────────────────────────────
   socket.on('join_room', ({ playerName, pin, playerSessionId }, callback) => {
-    const room = getRoom(pin);
+    const room = getRoom();
     if (!room) {
       return callback({ success: false, error: 'Room not found. Check your PIN.' });
     }
@@ -207,13 +208,13 @@ function registerHandlers(socket, io, questions) {
       return callback({ success: false, error: 'Game already in progress.' });
     }
 
-    addPlayer(pin, { id: socket.id, name: playerName, avatarObject: { ...DEFAULT_AVATAR_OBJECT } });
+    addPlayer({ id: socket.id, name: playerName, avatarObject: { ...DEFAULT_AVATAR_OBJECT } });
     socket.playerName = playerName; // Set socket attribute for chat messages
     socket.playerSessionId = playerSessionId || null;
-    socket.join(pin);
-    console.log(`[Join] "${playerName}" → PIN ${pin}`);
+    socket.join(LAN_ROOM_ID);
+    console.log(`[Join] "${playerName}" → LAN_ROOM`);
 
-    io.to(pin).emit('player_joined', { players: room.players });
+    io.to(LAN_ROOM_ID).emit('player_joined', { players: room.players });
     socket.emit('chat:mode', { mode: chatInstance.mode, allowed: chatInstance.allowed });
     callback({
       success: true,
@@ -225,37 +226,29 @@ function registerHandlers(socket, io, questions) {
 
   // ── join (LAN mode) ──────────────────────────────────────────────────────
   socket.on('join', ({ playerName, playerSessionId }, callback) => {
-    let room = getRoom(LAN_ROOM);
+    let room = getRoom();
     
-    // Auto-create LAN_ROOM if it doesn't exist or game is finished
+    // Auto-initialize LAN_ROOM if it doesn't exist or game is finished
     if (!room || room.status === 'finished') {
-      const pin = (rooms[LAN_ROOM] = {
-        roomName: 'LocalFlux Game',
-        hostId: null,
-        hostSessionId: null,
-        players: [],
-        status: 'lobby',
-        currentQ: -1,
-        answersIn: {},
-      }, LAN_ROOM);
-      room = getRoom(LAN_ROOM);
+      initLanRoom('LocalFlux Game', null, null);
+      room = getRoom();
     }
 
     if (room.status !== 'lobby') {
       return callback({ success: false, error: 'Game already in progress.' });
     }
 
-    addPlayer(LAN_ROOM, {
+    addPlayer({
       id: socket.id,
       name: playerName || 'Guest',
       avatarObject: { ...DEFAULT_AVATAR_OBJECT },
     });
     socket.playerName = playerName || 'Guest';
     socket.playerSessionId = playerSessionId || null;
-    socket.join(LAN_ROOM);
-    console.log(`[LAN Join] "${playerName}" → ${LAN_ROOM}`);
+    socket.join(LAN_ROOM_ID);
+    console.log(`[LAN Join] "${playerName}" → LAN_ROOM`);
 
-    io.to(LAN_ROOM).emit('player_joined', { players: room.players });
+    io.to(LAN_ROOM_ID).emit('player_joined', { players: room.players });
     socket.emit('chat:mode', { mode: chatInstance.mode, allowed: chatInstance.allowed });
     callback({
       success: true,
@@ -267,14 +260,14 @@ function registerHandlers(socket, io, questions) {
 
   // ── player:resume ───────────────────────────────────────────────────────
   socket.on('player:resume', ({ pin, playerSessionId }, callback) => {
-    const room = getRoom(pin);
+    const room = getRoom();
     if (!room) {
       pendingPlayerReconnect.delete(playerSessionId);
       return callback?.({ success: false, error: 'Room not found.' });
     }
 
     const pending = pendingPlayerReconnect.get(playerSessionId);
-    if (!pending || pending.pin !== pin) {
+    if (!pending) {
       return callback?.({ success: false, error: 'No resumable player session.' });
     }
 
@@ -289,7 +282,7 @@ function registerHandlers(socket, io, questions) {
       playerDisconnectTimers.delete(playerSessionId);
     }
 
-    addPlayer(pin, {
+    addPlayer({
       id: socket.id,
       name: pending.playerName,
       avatarObject: normalizeAvatarObject(pending.avatarObject),
@@ -303,10 +296,10 @@ function registerHandlers(socket, io, questions) {
 
     socket.playerName = pending.playerName;
     socket.playerSessionId = playerSessionId || null;
-    socket.join(pin);
+    socket.join(LAN_ROOM_ID);
     pendingPlayerReconnect.delete(playerSessionId);
 
-    io.to(pin).emit('player_joined', { players: room.players });
+    io.to(LAN_ROOM_ID).emit('player_joined', { players: room.players });
     socket.emit('chat:mode', { mode: chatInstance.mode, allowed: chatInstance.allowed });
 
     const roomQuestions = room.questions || questions;
@@ -338,8 +331,8 @@ function registerHandlers(socket, io, questions) {
 
   // ── player:updateProfile ───────────────────────────────────────────────
   socket.on('player:updateProfile', ({ newName, avatarObject }, callback) => {
-    const { pin, room } = findPlayerRoomBySocketId(socket.id);
-    if (!room || !pin) {
+    const room = getRoom();
+    if (!room) {
       return callback?.({ success: false, error: 'Player is not in an active room.' });
     }
 
@@ -359,18 +352,18 @@ function registerHandlers(socket, io, questions) {
     target.avatarObject = normalizedAvatarObject;
     socket.playerName = normalizedName;
 
-    io.to(pin).emit('player:profileUpdated', {
+    io.to(LAN_ROOM_ID).emit('player:profileUpdated', {
       player: { ...target },
       players: room.players,
     });
-    io.to(pin).emit('player_joined', { players: room.players });
+    io.to(LAN_ROOM_ID).emit('player_joined', { players: room.players });
 
     return callback?.({ success: true, player: { ...target } });
   });
 
   // ── start_game ───────────────────────────────────────────────────────────
   socket.on('start_game', ({ pin }, callback) => {
-    const room = getRoom(pin);
+    const room = getRoom();
     if (!room) return callback({ success: false, error: 'Room not found.' });
     if (room.hostId !== socket.id) return callback({ success: false, error: 'Only the host can start.' });
 
@@ -379,9 +372,9 @@ function registerHandlers(socket, io, questions) {
     try {
       const firstQ = startGame(room, roomQuestions);
       const timedFirstQ = withQuestionTiming(firstQ);
-      console.log(`[Game] PIN ${pin} started with ${room.players.length} player(s).`);
-      io.to(pin).emit('game_started', { pin, roomName: room.roomName });
-      io.to(pin).emit('next_question', timedFirstQ);
+      console.log(`[Game] LAN_ROOM started with ${room.players.length} player(s).`);
+      io.to(LAN_ROOM_ID).emit('game_started', { pin: LAN_ROOM_ID, roomName: room.roomName });
+      io.to(LAN_ROOM_ID).emit('next_question', timedFirstQ);
       callback({ success: true });
     } catch (err) {
       callback({ success: false, error: err.message });
@@ -390,13 +383,13 @@ function registerHandlers(socket, io, questions) {
 
   // ── submit_answer ────────────────────────────────────────────────────────
   socket.on('submit_answer', ({ pin, answer }, callback) => {
-    const room = getRoom(pin);
+    const room = getRoom();
     if (!room) return callback?.({ success: false, error: 'Room not found.' });
 
     const roomQuestions = room.questions || questions;
 
     const result = submitAnswer(room, roomQuestions, socket.id, answer);
-    console.log(`[Answer] PIN ${pin} Q${room.currentQ} — "${answer}" (${result.correct ? 'correct' : 'wrong'})`);
+    console.log(`[Answer] LAN_ROOM Q${room.currentQ} — "${answer}" (${result.correct ? 'correct' : 'wrong'})`);
 
     if (result.alreadyAnswered) {
       return callback?.({ success: false, error: 'Already answered.' });
@@ -412,7 +405,7 @@ function registerHandlers(socket, io, questions) {
 
   // ── next_question (host advances) ────────────────────────────────────────
   socket.on('next_question', ({ pin }, callback) => {
-    const room = getRoom(pin);
+    const room = getRoom();
     if (!room) return callback?.({ success: false, error: 'Room not found.' });
     if (room.hostId !== socket.id) return callback?.({ success: false, error: 'Only the host can advance.' });
 
@@ -421,16 +414,16 @@ function registerHandlers(socket, io, questions) {
     try {
       const { result, next, gameOver } = advanceQuestion(room, roomQuestions);
 
-      io.to(pin).emit('question_result', result);
+      io.to(LAN_ROOM_ID).emit('question_result', result);
 
       if (gameOver) {
-        io.to(pin).emit('game_over', gameOver);
-        deleteRoom(pin);
-        console.log(`[Game] PIN ${pin} finished. Room deleted.`);
+        io.to(LAN_ROOM_ID).emit('game_over', gameOver);
+        deleteRoom();
+        console.log(`[Game] LAN_ROOM finished. Room deleted.`);
         return callback?.({ success: true, done: true });
       }
 
-      io.to(pin).emit('next_question', withQuestionTiming(next));
+      io.to(LAN_ROOM_ID).emit('next_question', withQuestionTiming(next));
       callback?.({ success: true, done: false });
     } catch (err) {
       callback?.({ success: false, error: err.message });
@@ -443,33 +436,27 @@ function registerHandlers(socket, io, questions) {
 
   // host moderation events
   socket.on('chat:host_mute', ({ target }, callback) => {
-    const pin = findHostPin(socket.id);
-    if (!pin) return callback?.({ ok: false, reason: 'not_host' });
-    const room = getRoom(pin);
+    const room = getRoom();
     if (!room) return callback?.({ ok: false, reason: 'room_not_found' });
     if (room.hostId !== socket.id) return callback?.({ ok: false, reason: 'not_host' });
     if (!chatInstance) return callback?.({ ok: false });
     chatInstance.mute(target);
-    io.to(pin).emit('chat:moderation', { action: 'mute', target });
+    io.to(LAN_ROOM_ID).emit('chat:moderation', { action: 'mute', target });
     callback?.({ ok: true });
   });
 
   socket.on('chat:host_unmute', ({ target }, callback) => {
-    const pin = findHostPin(socket.id);
-    if (!pin) return callback?.({ ok: false, reason: 'not_host' });
-    const room = getRoom(pin);
+    const room = getRoom();
     if (!room) return callback?.({ ok: false, reason: 'room_not_found' });
     if (room.hostId !== socket.id) return callback?.({ ok: false, reason: 'not_host' });
     if (!chatInstance) return callback?.({ ok: false });
     chatInstance.unmute(target);
-    io.to(pin).emit('chat:moderation', { action: 'unmute', target });
+    io.to(LAN_ROOM_ID).emit('chat:moderation', { action: 'unmute', target });
     callback?.({ ok: true });
   });
 
   socket.on('host:kick_player', ({ target }, callback) => {
-    const pin = findHostPin(socket.id);
-    if (!pin) return callback?.({ ok: false, reason: 'not_host' });
-    const room = getRoom(pin);
+    const room = getRoom();
     if (!room) return callback?.({ ok: false, reason: 'room_not_found' });
     if (room.hostId !== socket.id) return callback?.({ ok: false, reason: 'not_host' });
 
@@ -485,19 +472,17 @@ function registerHandlers(socket, io, questions) {
 
     const targetSocket = io.sockets.sockets.get(target);
     if (targetSocket) {
-      targetSocket.leave(pin);
+      targetSocket.leave(LAN_ROOM_ID);
       targetSocket.emit('room_closed', { message: 'You were removed by the host.' });
     }
 
-    io.to(pin).emit('player_joined', { players: room.players });
+    io.to(LAN_ROOM_ID).emit('player_joined', { players: room.players });
     callback?.({ ok: true });
   });
 
   // host sets chat mode (OFF | FREE | RESTRICTED) and optional allowed messages
   socket.on('chat:host_set_mode', ({ pin: p, mode, allowed }, callback) => {
-    const pin = p || findHostPin(socket.id);
-    if (!pin) return callback?.({ ok: false, reason: 'not_host' });
-    const room = getRoom(pin);
+    const room = getRoom();
     if (!room) return callback?.({ ok: false, reason: 'room_not_found' });
     if (room.hostId !== socket.id) return callback?.({ ok: false, reason: 'not_host' });
     if (!chatInstance) return callback?.({ ok: false });
@@ -517,7 +502,7 @@ function registerHandlers(socket, io, questions) {
         chatInstance.allowed = validated;
       }
       chatInstance.setMode(mode);
-      io.to(pin).emit('chat:mode', { mode: chatInstance.mode, allowed: chatInstance.allowed });
+      io.to(LAN_ROOM_ID).emit('chat:mode', { mode: chatInstance.mode, allowed: chatInstance.allowed });
       callback?.({ ok: true });
     } catch (err) {
       callback?.({ ok: false, reason: err.message });
@@ -531,52 +516,38 @@ function registerHandlers(socket, io, questions) {
     // cleanup chat state
     if (chatInstance) chatInstance.onDisconnect(socket.id);
 
-    const hostPin = findHostPin(socket.id);
-    if (hostPin) {
-      const room = getRoom(hostPin);
-      if (!room) return;
-
+    // Check if this is the host
+    const room = getRoom();
+    if (room && room.hostId === socket.id) {
       room.hostId = null;
-      io.to(hostPin).emit('host_reconnecting', {
+      io.to(LAN_ROOM_ID).emit('host_reconnecting', {
         message: `Host disconnected. Waiting ${Math.floor(HOST_RECONNECT_GRACE_MS / 1000)}s for reconnection.`,
       });
 
-      const existingTimer = hostDisconnectTimers.get(hostPin);
+      const existingTimer = hostDisconnectTimers.get(LAN_ROOM_ID);
       if (existingTimer) {
         clearTimeout(existingTimer);
       }
 
       const timer = setTimeout(() => {
-        const liveRoom = getRoom(hostPin);
+        const liveRoom = getRoom();
         if (liveRoom && !liveRoom.hostId) {
-          io.to(hostPin).emit('room_closed', { message: 'Host disconnected.' });
-          deleteRoom(hostPin);
-          console.log(`[Room] PIN ${hostPin} destroyed (host did not reconnect in time).`);
+          io.to(LAN_ROOM_ID).emit('room_closed', { message: 'Host disconnected.' });
+          deleteRoom();
+          console.log(`[Room] LAN_ROOM destroyed (host did not reconnect in time).`);
         }
-        hostDisconnectTimers.delete(hostPin);
+        hostDisconnectTimers.delete(LAN_ROOM_ID);
       }, HOST_RECONNECT_GRACE_MS);
 
-      hostDisconnectTimers.set(hostPin, timer);
+      hostDisconnectTimers.set(LAN_ROOM_ID, timer);
       return;
     }
 
-    let disconnectedPin = null;
-    let disconnectedPlayer = null;
-    let disconnectedRoom = null;
-    for (const pin of Object.keys(rooms)) {
-      const room = rooms[pin];
-      const found = room.players.find((p) => p.id === socket.id);
-      if (found) {
-        disconnectedPin = pin;
-        disconnectedRoom = room;
-        disconnectedPlayer = found;
-        break;
-      }
-    }
-
-    const playerPin = removePlayer(socket.id);
-    if (playerPin) {
-      const room = getRoom(playerPin);
+    // Check if this is a player
+    const disconnectedPlayer = room?.players.find((p) => p.id === socket.id);
+    const wasPlayerRemoved = removePlayer(socket.id);
+    
+    if (wasPlayerRemoved && room) {
       if (room) {
         let lastAnswer;
         if (disconnectedRoom?.answersIn && Object.prototype.hasOwnProperty.call(disconnectedRoom.answersIn, socket.id)) {
