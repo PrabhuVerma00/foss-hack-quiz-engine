@@ -5,6 +5,38 @@ import { useHostToken } from '../context/HostTokenProvider'
 import { createGameSocket } from '../backendUrl'
 import { deckStudioDB } from '../deckStudio/db'
 
+const LIBRARY_GRADIENTS = [
+  'from-emerald-400 to-blue-500',
+  'from-amber-400 to-orange-500',
+  'from-cyan-400 to-teal-500',
+  'from-rose-400 to-fuchsia-500',
+  'from-lime-400 to-emerald-500',
+]
+
+function DeckCard({ deck, index, buttonLabel, onAction }) {
+  const gradient = LIBRARY_GRADIENTS[index % LIBRARY_GRADIENTS.length]
+  const questionCount = Array.isArray(deck?.slides) ? deck.slides.length : 0
+
+  return (
+    <article className="group snap-start min-w-[260px] max-w-[260px] rounded-2xl border border-slate-700 bg-slate-900/70 p-3 transition-all duration-200 hover:-translate-y-1 hover:border-slate-500 hover:shadow-xl hover:shadow-black/35">
+      <div className={`h-28 rounded-xl bg-gradient-to-br ${gradient} p-3`}> 
+        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/80">Deck</p>
+        <p className="mt-3 line-clamp-2 text-lg font-black tracking-tight text-white">{deck?.title || 'Untitled Deck'}</p>
+      </div>
+      <div className="mt-3">
+        <p className="truncate text-sm font-semibold text-slate-100">{deck?.title || 'Untitled Deck'}</p>
+        <p className="mt-1 text-xs text-slate-400">{questionCount} questions</p>
+      </div>
+      <button
+        onClick={onAction}
+        className="mt-3 w-full rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 text-xs font-semibold text-emerald-200 transition hover:bg-emerald-400/20"
+      >
+        {buttonLabel}
+      </button>
+    </article>
+  )
+}
+
 export default function AdminDashboard() {
   const navigate = useNavigate()
   const { setHostToken } = useHostToken()
@@ -121,6 +153,23 @@ export default function AdminDashboard() {
     }
   }
 
+  const handleHostDeck = async (deckId) => {
+    if (!deckId) return
+
+    setIsGeneratingToken(true)
+    setTokenError('')
+
+    try {
+      const tokenRes = await requestHostToken()
+      setHostToken(tokenRes.token, tokenRes.ttlMs)
+      navigate(`/host?token=${encodeURIComponent(tokenRes.token)}&deckId=${encodeURIComponent(deckId)}`)
+    } catch (err) {
+      console.error('[AdminDashboard] Host deck token error:', err)
+      setTokenError(err.message || 'Failed to host selected deck. Try again.')
+      setIsGeneratingToken(false)
+    }
+  }
+
   return (
     <div className="relative min-h-screen overflow-hidden bg-slate-950 text-white flex flex-col items-center justify-center p-6 select-none">
       {/* Background blur effects */}
@@ -176,6 +225,31 @@ export default function AdminDashboard() {
             <p className="mt-2 text-sm text-slate-300">Create, edit, and tune decks before going live.</p>
           </button>
         </div>
+
+        <section className="mt-10">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-xl font-black tracking-tight text-white">Your Library</h2>
+            <p className="text-xs uppercase tracking-[0.16em] text-slate-400">{localDecks.length} decks</p>
+          </div>
+
+          {localDecks.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/40 p-6 text-sm text-slate-400">
+              No local decks yet. Open Deck Studio to create one.
+            </div>
+          ) : (
+            <div className="flex snap-x overflow-x-auto gap-4 pb-4">
+              {localDecks.map((deck, index) => (
+                <DeckCard
+                  key={deck.id || `${deck.title}_${index}`}
+                  deck={deck}
+                  index={index}
+                  buttonLabel="Host This"
+                  onAction={() => handleHostDeck(deck.id)}
+                />
+              ))}
+            </div>
+          )}
+        </section>
 
         {/* Error message */}
         {tokenError && (
