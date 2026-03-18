@@ -111,11 +111,11 @@ export default function Chat({ socket, roomPin, readOnly = false, title = 'Chat'
   };
 
   return (
-    <div className="flex h-full flex-col gap-3 text-white">
-      <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-3">
+    <div className="flex h-full flex-col gap-2 text-white">
+      <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-900/70 px-3 py-2">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-500">{title}</p>
-          <p className="mt-1 text-xs text-slate-400/90">
+          <p className="mt-0.5 text-[11px] text-slate-400/90">
             {readOnly ? 'Live room feed' : mode === 'FREE' ? 'Open chat enabled' : mode === 'RESTRICTED' ? 'Guided mode' : 'Silent mode enabled'}
           </p>
         </div>
@@ -132,30 +132,32 @@ export default function Chat({ socket, roomPin, readOnly = false, title = 'Chat'
 
       <div className="min-h-0 flex-1 overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/70">
         <div className="flex h-full flex-col">
-          <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
+          <div className="flex-1 space-y-1.5 overflow-y-auto px-3 py-2">
             {messages.length === 0 ? (
-              <div className="flex h-full min-h-32 items-center justify-center rounded-xl border border-dashed border-slate-800 bg-slate-950/70 px-4 text-center text-sm text-slate-500">
+              <div className="flex h-full min-h-24 items-center justify-center rounded-xl border border-dashed border-slate-800 bg-slate-950/70 px-4 text-center text-xs text-slate-500">
                 No messages yet.
               </div>
             ) : (
               groupedMessages.map((message, index) => (
                 <div
                   key={`${message.ts}-${index}`}
-                  className={`group rounded-xl px-3 py-2 transition-colors ${
+                  className={`group px-1 py-0.5 ${
                     message._showSender
-                      ? 'border border-slate-800 bg-slate-900 hover:border-slate-700'
-                      : 'border border-transparent bg-slate-900/50'
+                      ? 'mt-1.5 first:mt-0'
+                      : 'mt-0.5'
                   }`}
                 >
                   {message._showSender ? (
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex min-w-0 items-start gap-2">
-                        <span className="text-sm font-semibold text-emerald-300">{message.name}</span>
-                        <p className="text-sm leading-6 text-slate-100 break-words">{message.text}</p>
+                    <div className="flex items-start gap-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="inline-block max-w-full rounded-2xl border border-slate-600/40 bg-transparent px-2.5 py-1.5 text-[13px] leading-5 text-slate-100 break-words">
+                          <span className="mr-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-300/90">{message.name}</span>
+                          <span>{message.text}</span>
+                        </p>
                         {allowHostActions && readOnly && message.from && onHostMute && message.name !== 'Host' && (
                           <button
                             onClick={() => onHostMute(message.from)}
-                            className={`hidden rounded-md px-2 py-0.5 text-[10px] font-semibold transition group-hover:inline-flex ${
+                            className={`mt-1 hidden rounded-md px-2 py-0.5 text-[10px] font-semibold transition group-hover:inline-flex ${
                               mutedSet.has(message.from)
                                 ? 'border border-emerald-500/40 bg-emerald-500/20 text-emerald-200'
                                 : 'border border-amber-500/40 bg-amber-500/15 text-amber-200 hover:bg-amber-500/25'
@@ -166,10 +168,9 @@ export default function Chat({ socket, roomPin, readOnly = false, title = 'Chat'
                           </button>
                         )}
                       </div>
-                      <span className="shrink-0 font-mono text-[11px] text-slate-500">{new Date(message.ts).toLocaleTimeString()}</span>
                     </div>
                   ) : (
-                    <p className="pl-0.5 text-sm leading-6 text-slate-200 break-words">{message.text}</p>
+                    <p className="ml-0.5 inline-block max-w-full rounded-2xl border border-slate-600/40 bg-transparent px-2.5 py-1.5 text-[13px] leading-5 text-slate-100 break-words">{message.text}</p>
                   )}
                 </div>
               ))
@@ -177,7 +178,7 @@ export default function Chat({ socket, roomPin, readOnly = false, title = 'Chat'
           </div>
 
           {!readOnly && (
-            <div className="border-t border-slate-800 px-4 py-4">
+            <div className="border-t border-slate-800 px-3 py-3">
               {feedback && <p className="mb-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-200">{feedback}</p>}
               <div className="flex gap-3">
                 <input
