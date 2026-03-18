@@ -5,6 +5,7 @@ import { createGameSocket, getBackendUrl } from '../backendUrl';
 import { useHostToken } from '../context/HostTokenProvider';
 import { deckStudioDB } from '../deckStudio/db';
 import { saveDraft } from '../deckStudio/db';
+import { fetchCloudDecks, downloadDeckToLocal } from '../deckStudio/cloudCatalog';
 import { DeckSchema } from '../deckStudio/schemas';
 import { QRCodeSVG } from 'qrcode.react';
 import { Rocket, Shield, Zap, Flame } from 'lucide-react';
@@ -190,6 +191,10 @@ export default function Host({ onBack, studioQuestions = null }) {
   const [isDragging, setIsDragging] = useState(false);
   const [pendingDroppedDeck, setPendingDroppedDeck] = useState(null);
   const [dropNotice, setDropNotice] = useState('');
+  const [cloudDecks, setCloudDecks] = useState([]);
+  const [cloudStatus, setCloudStatus] = useState('loading');
+  const [cloudError, setCloudError] = useState('');
+  const [downloadingCloudDeckId, setDownloadingCloudDeckId] = useState('');
   const [recentlyUpdatedPlayerIds, setRecentlyUpdatedPlayerIds] = useState(new Set());
   const [timeLeft, setTimeLeft] = useState(0);
   const [timeTotal, setTimeTotal] = useState(0);
@@ -373,6 +378,34 @@ export default function Host({ onBack, studioQuestions = null }) {
       .catch((err) => {
         console.error('Failed to load studio drafts:', err);
       });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Fetch cloud catalog for lobby explorer section
+  useEffect(() => {
+    let active = true;
+
+    const loadCloudCatalog = async () => {
+      setCloudStatus('loading');
+      setCloudError('');
+      try {
+        const decks = await fetchCloudDecks();
+        if (!active) return;
+        setCloudDecks(decks);
+        setCloudStatus('ready');
+      } catch (err) {
+        if (!active) return;
+        const message = String(err?.message || '').toLowerCase();
+        const isOffline = message.includes('failed to fetch') || message.includes('network') || message.includes('offline');
+        setCloudDecks([]);
+        setCloudStatus(isOffline ? 'offline' : 'error');
+        setCloudError(err?.message || 'Unable to load cloud deck catalog.');
+      }
+    };
+
+    loadCloudCatalog();
     return () => {
       active = false;
     };
@@ -587,6 +620,34 @@ export default function Host({ onBack, studioQuestions = null }) {
     };
 
     reader.readAsText(file);
+  };
+
+  const handleDownloadCloudDeck = async (deckMeta) => {
+    if (!deckMeta?.deckUrl || downloadingCloudDeckId) return;
+
+    setDownloadingCloudDeckId(deckMeta.id);
+    setError('');
+
+    try {
+      const savedDeck = await downloadDeckToLocal(deckMeta.deckUrl);
+      const deckQuestions = studioSlidesToQuestions(savedDeck.slides || []);
+
+      setStudioDecks((prev) => {
+        const remaining = prev.filter((entry) => entry.id !== savedDeck.id);
+        return [savedDeck, ...remaining];
+      });
+      setSelectedDeckKey(`studio:${savedDeck.id}`);
+      setSelectedDeckSource('studio');
+      setSelectedDeckCount(savedDeck.slides.length);
+      setDeckLabel(savedDeck.title);
+
+      emitSelectedDeck(savedDeck.title, 'cloud', deckQuestions);
+      setDropNotice(`Downloaded ${savedDeck.title} and set it as the active room deck.`);
+    } catch (err) {
+      setError(err?.message || 'Cloud deck download failed.');
+    } finally {
+      setDownloadingCloudDeckId('');
+    }
   };
 
   const handleStart = () => {
@@ -981,7 +1042,36 @@ export default function Host({ onBack, studioQuestions = null }) {
 
                   <div className="border-t border-slate-800 pt-4">
                     <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">Explore Cloud Decks</p>
-                    <p className="mt-2 text-xs text-slate-500">Cloud download options will appear here.</p>
+                    {cloudStatus === 'loading' && <p className="mt-2 text-xs text-slate-500">Loading cloud catalog...</p>}
+                    {cloudStatus === 'offline' && <p className="mt-2 text-xs text-amber-300">Offline mode: cloud decks unavailable.</p>}
+                    {cloudStatus === 'error' && <p className="mt-2 text-xs text-rose-300">{cloudError}</p>}
+                    {cloudStatus === 'ready' && cloudDecks.length === 0 && <p className="mt-2 text-xs text-slate-500">No cloud decks available.</p>}
+
+                    {cloudStatus === 'ready' && cloudDecks.length > 0 && (
+                      <div className="mt-3 max-h-48 space-y-2 overflow-y-auto pr-1">
+                        {cloudDecks.map((deck) => (
+                          <div key={deck.id} className="rounded-xl border border-slate-700 bg-slate-950 p-2.5">
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="truncate text-xs font-semibold text-slate-200">{deck.title}</p>
+                              {typeof deck.questionCount === 'number' && (
+                                <span className="rounded-full border border-emerald-400/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-300">
+                                  {deck.questionCount}
+                                </span>
+                              )}
+                            </div>
+                            <p className="mt-1 line-clamp-2 text-[11px] text-slate-500">{deck.description || 'Official cloud deck'}</p>
+                            <button
+                              onClick={() => handleDownloadCloudDeck(deck)}
+                              disabled={downloadingCloudDeckId === deck.id}
+                              className="mt-2 w-full rounded-lg border border-amber-400/40 bg-amber-400/10 px-2 py-1.5 text-[11px] font-semibold text-amber-200 transition hover:bg-amber-400/20 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {downloadingCloudDeckId === deck.id ? 'Downloading...' : 'Download'}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
                     <button
                       onClick={() => { window.location.href = hostToken ? `/studio?token=${encodeURIComponent(hostToken)}` : '/studio'; }}
                       className="mt-3 rounded-lg border border-amber-400/40 bg-amber-400/10 px-2.5 py-1 text-[11px] font-semibold text-amber-200 transition hover:bg-amber-400/20"
