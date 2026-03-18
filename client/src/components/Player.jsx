@@ -91,9 +91,10 @@ function displayRoomName(name) {
 export default function Player({ onBack }) {
   const savedPlayerState = readPlayerState();
   const playerSessionIdRef = useRef(getOrCreatePlayerSessionId());
-  const resumeAttemptedRef = useRef(false);
   const socketRef = useRef(null);
   const [connected, setConnected] = useState(false);
+  const [chatSocket, setChatSocket] = useState(null);
+  const [selfPlayerId, setSelfPlayerId] = useState('');
   const [name, setName] = useState(savedPlayerState?.name || 'Guest');
   const [avatarObject, setAvatarObject] = useState(normalizeAvatarObject(savedPlayerState?.avatarObject));
   const [avatarTab, setAvatarTab] = useState(savedPlayerState?.avatarObject?.type || 'preset');
@@ -118,6 +119,11 @@ export default function Player({ onBack }) {
   const [chatDrawerOpen, setChatDrawerOpen] = useState(false);
   const modeLabels = { FREE: 'OPEN', RESTRICTED: 'GUIDED', OFF: 'SILENT' };
   const roomDisplayName = displayRoomName(roomName);
+  const latestNameRef = useRef(name);
+
+  useEffect(() => {
+    latestNameRef.current = name;
+  }, [name]);
 
   useEffect(() => {
     if (!name.trim() && !roomName.trim()) return;
@@ -132,14 +138,18 @@ export default function Player({ onBack }) {
   useEffect(() => {
     const socket = createGameSocket();
     socketRef.current = socket;
+    const chatSocketTimer = window.setTimeout(() => {
+      setChatSocket(socket);
+    }, 0);
     socket.on('connect', () => {
       setConnected(true);
+      setSelfPlayerId(socket.id || '');
 
       // Auto-join to LAN room on connect
       socket.emit(
         'join',
         {
-          playerName: name || 'Guest',
+          playerName: latestNameRef.current || 'Guest',
           playerSessionId: playerSessionIdRef.current,
         },
         (res) => {
@@ -206,7 +216,9 @@ export default function Player({ onBack }) {
       setPhase('gameover');
     });
     return () => {
+      window.clearTimeout(chatSocketTimer);
       socket.off('chat:mode');
+      setChatSocket(null);
       socket.disconnect();
     };
   }, []);
@@ -296,8 +308,8 @@ export default function Player({ onBack }) {
         : 'text-emerald-300';
 
   if (phase === 'gameover') {
-    const myEntry = finalScores.find(p => p.id === socketRef.current?.id);
-    const myRank = finalScores.findIndex(p => p.id === socketRef.current?.id) + 1;
+    const myEntry = finalScores.find(p => p.id === selfPlayerId);
+    const myRank = finalScores.findIndex(p => p.id === selfPlayerId) + 1;
     return (
       <div className="min-h-screen bg-slate-950 text-white flex flex-col p-5 pt-8 animate-phase-in">
         <p className="mb-5 text-[11px] uppercase tracking-[0.28em] text-slate-500">Game Over</p>
@@ -314,7 +326,7 @@ export default function Player({ onBack }) {
               className={`flex items-center justify-between rounded-2xl px-4 py-4 border ${
                 i === 0
                   ? 'border-amber-300/50 bg-amber-300/15 text-amber-100'
-                  : p.id === socketRef.current?.id
+                  : p.id === selfPlayerId
                     ? 'border-emerald-400/50 bg-emerald-400/15 text-emerald-100'
                     : 'border-slate-800 bg-slate-900/80 text-white'
               }`}
@@ -413,7 +425,7 @@ export default function Player({ onBack }) {
         </div>
 
         <div className="mt-5 hidden rounded-2xl border border-slate-800 bg-slate-900/70 p-3 md:block">
-          <Chat socket={socketRef.current} roomPin={LAN_ROOM} title="Room Chat" initialMode={chatMode} initialAllowed={chatAllowed} />
+          <Chat socket={chatSocket} roomPin={LAN_ROOM} title="Room Chat" initialMode={chatMode} initialAllowed={chatAllowed} />
         </div>
 
         <button
@@ -441,7 +453,7 @@ export default function Player({ onBack }) {
                 </button>
               </div>
               <div className="min-h-0 flex-1">
-                <Chat socket={socketRef.current} roomPin={LAN_ROOM} title="Room Chat" initialMode={chatMode} initialAllowed={chatAllowed} />
+                <Chat socket={chatSocket} roomPin={LAN_ROOM} title="Room Chat" initialMode={chatMode} initialAllowed={chatAllowed} />
               </div>
             </div>
           </>
@@ -606,7 +618,7 @@ export default function Player({ onBack }) {
         </section>
 
         <div className="w-full max-w-md mt-4 rounded-2xl border border-slate-800 bg-slate-900/70 p-3">
-          <Chat socket={socketRef.current} roomPin={LAN_ROOM} title="Lobby Chat" initialMode={chatMode} initialAllowed={chatAllowed} />
+          <Chat socket={chatSocket} roomPin={LAN_ROOM} title="Lobby Chat" initialMode={chatMode} initialAllowed={chatAllowed} />
         </div>
       </div>
     );
