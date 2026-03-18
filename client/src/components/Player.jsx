@@ -145,6 +145,12 @@ export default function Player({ onBack }) {
           }
 
           setError('');
+          if (typeof res.playerName === 'string' && res.playerName.trim()) {
+            setName(res.playerName.trim());
+          }
+          if (res.avatarObject && typeof res.avatarObject === 'object') {
+            setAvatarObject(normalizeAvatarObject(res.avatarObject));
+          }
           setRoomName(res.roomName || 'LocalFlux Game');
           if (res.chatMode) setChatMode(res.chatMode);
           if (Array.isArray(res.chatAllowed)) setChatAllowed(res.chatAllowed);

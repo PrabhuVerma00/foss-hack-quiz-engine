@@ -23,13 +23,58 @@ const { ChatManager } = require('../core/chatManager');
 const { sanitizeQuestion } = require('../core/deckLoader');
 
 let chatInstance = null;
-const DEFAULT_AVATAR_OBJECT = { type: 'gradient', value: 'emerald' };
+const DEFAULT_AVATAR_OBJECT = { type: 'preset', value: '1.jpg' };
+const PRESET_AVATAR_POOL = [
+  '1.jpg',
+  '2.jpg',
+  '4.jpg',
+  '5.jpg',
+  '11.jpg',
+  '15.jpg',
+  '16.jpg',
+  '18.jpg',
+  '19.jpg',
+  '21.jpg',
+  '22.jpg',
+  '23.jpg',
+  '7dcc3f3eebc2fccd2f9dd3146c61c914.avf',
+  'e55afb4aea57bced165fb55ad92addf5.jpg',
+];
+const NAME_PREFIXES = ['Neo', 'Turbo', 'Solar', 'Nova', 'Glitch', 'Echo', 'Pixel', 'Drift', 'Axel', 'Flux'];
+const NAME_SUFFIXES = ['Rider', 'Nomad', 'Spark', 'Cipher', 'Pilot', 'Comet', 'Vector', 'Pulse', 'Ghost', 'Runner'];
 const LAN_ROOM = 'local_flux_main';
 const HOST_RECONNECT_GRACE_MS = 45000;
 const hostDisconnectTimers = new Map();
 const PLAYER_RECONNECT_GRACE_MS = 45000;
 const pendingPlayerReconnect = new Map();
 const playerDisconnectTimers = new Map();
+
+function pickRandom(list) {
+  if (!Array.isArray(list) || list.length === 0) return '';
+  const index = Math.floor(Math.random() * list.length);
+  return list[index];
+}
+
+function generateJoinProfile(room) {
+  const existingNames = new Set((room?.players || []).map((p) => String(p?.name || '').toLowerCase()));
+  let candidate = `${pickRandom(NAME_PREFIXES)} ${pickRandom(NAME_SUFFIXES)}`.trim();
+  if (!candidate) candidate = 'Flux Guest';
+
+  if (existingNames.has(candidate.toLowerCase())) {
+    for (let i = 0; i < 12; i += 1) {
+      const withNumber = `${candidate} ${Math.floor(Math.random() * 90) + 10}`;
+      if (!existingNames.has(withNumber.toLowerCase())) {
+        candidate = withNumber;
+        break;
+      }
+    }
+  }
+
+  return {
+    name: candidate,
+    avatarObject: { type: 'preset', value: pickRandom(PRESET_AVATAR_POOL) || DEFAULT_AVATAR_OBJECT.value },
+  };
+}
 
 function normalizeCustomQuestions(input) {
   if (!Array.isArray(input)) return null;
@@ -259,11 +304,12 @@ function registerHandlers(socket, io, questions, tokenManager) {
       return callback({ success: false, error: 'Game already in progress.' });
     }
 
-    addPlayer({ id: socket.id, name: playerName, avatarObject: { ...DEFAULT_AVATAR_OBJECT } });
-    socket.playerName = playerName; // Set socket attribute for chat messages
+    const assigned = generateJoinProfile(room);
+    addPlayer({ id: socket.id, name: assigned.name, avatarObject: assigned.avatarObject });
+    socket.playerName = assigned.name;
     socket.playerSessionId = playerSessionId || null;
     socket.join(LAN_ROOM_ID);
-    console.log(`[Join] "${playerName}" → LAN_ROOM`);
+    console.log(`[Join] "${assigned.name}" → LAN_ROOM`);
 
     io.to(LAN_ROOM_ID).emit('player_joined', { players: room.players });
     socket.emit('chat:mode', { mode: chatInstance.mode, allowed: chatInstance.allowed });
@@ -274,6 +320,8 @@ function registerHandlers(socket, io, questions, tokenManager) {
       chatAllowed: chatInstance.allowed,
       deckSelected: Array.isArray(room.questions) && room.questions.length > 0,
       deckMeta: room.deckMeta || null,
+      playerName: assigned.name,
+      avatarObject: assigned.avatarObject,
     });
   });
 
@@ -291,15 +339,16 @@ function registerHandlers(socket, io, questions, tokenManager) {
       return callback({ success: false, error: 'Game already in progress.' });
     }
 
+    const assigned = generateJoinProfile(room);
     addPlayer({
       id: socket.id,
-      name: playerName || 'Guest',
-      avatarObject: { ...DEFAULT_AVATAR_OBJECT },
+      name: assigned.name,
+      avatarObject: assigned.avatarObject,
     });
-    socket.playerName = playerName || 'Guest';
+    socket.playerName = assigned.name;
     socket.playerSessionId = playerSessionId || null;
     socket.join(LAN_ROOM_ID);
-    console.log(`[LAN Join] "${playerName}" → LAN_ROOM`);
+    console.log(`[LAN Join] "${assigned.name}" → LAN_ROOM`);
 
     io.to(LAN_ROOM_ID).emit('player_joined', { players: room.players });
     socket.emit('chat:mode', { mode: chatInstance.mode, allowed: chatInstance.allowed });
@@ -310,6 +359,8 @@ function registerHandlers(socket, io, questions, tokenManager) {
       chatAllowed: chatInstance.allowed,
       deckSelected: Array.isArray(room.questions) && room.questions.length > 0,
       deckMeta: room.deckMeta || null,
+      playerName: assigned.name,
+      avatarObject: assigned.avatarObject,
     });
   });
 
