@@ -1,14 +1,52 @@
 import { useNavigate } from 'react-router-dom'
 import { BookOpen, Gamepad2, Loader } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useHostToken } from '../context/HostTokenProvider'
 import { createGameSocket } from '../backendUrl'
+import { deckStudioDB } from '../deckStudio/db'
 
 export default function AdminDashboard() {
   const navigate = useNavigate()
   const { setHostToken } = useHostToken()
   const [isGeneratingToken, setIsGeneratingToken] = useState(false)
   const [tokenError, setTokenError] = useState('')
+  const [localDecks, setLocalDecks] = useState([])
+  const [cloudDecks, setCloudDecks] = useState([])
+  const [isOnline, setIsOnline] = useState(() => (typeof navigator === 'undefined' ? true : navigator.onLine))
+  const [isLoadingCloud, setIsLoadingCloud] = useState(false)
+
+  useEffect(() => {
+    let active = true
+
+    deckStudioDB.drafts
+      .orderBy('updatedAt')
+      .reverse()
+      .toArray()
+      .then((drafts) => {
+        if (!active) return
+        setLocalDecks(Array.isArray(drafts) ? drafts : [])
+      })
+      .catch((err) => {
+        console.error('[AdminDashboard] Failed to load local decks:', err)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [])
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true)
+    const handleOffline = () => setIsOnline(false)
+
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+    }
+  }, [])
 
   const requestHostToken = async () => {
     const socket = createGameSocket()
