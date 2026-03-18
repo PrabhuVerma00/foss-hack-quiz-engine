@@ -13,6 +13,7 @@ import PingIndicator from './PingIndicator';
 
 const HOST_SESSION_KEY = 'lf_host_session_id';
 const HOST_STATE_KEY = 'lf_host_state';
+const LAN_ROOM = 'local_flux_main';
 const HOST_ICON_AVATARS = {
   rocket: Rocket,
   shield: Shield,
@@ -164,12 +165,12 @@ export default function Host({ onBack, studioQuestions = null }) {
   const [hostSocket, setHostSocket] = useState(null);
   const [connected, setConnected] = useState(false);
   const [roomName, setRoomName] = useState(savedHostState?.roomName || '');
-  const [pin, setPin] = useState(savedHostState?.pin || null);
+  const [roomId, setRoomId] = useState(savedHostState?.roomId || null);
   const [players, setPlayers] = useState(savedHostState?.players || []);
   const [error, setError] = useState('');
-  const [resumeNotice, setResumeNotice] = useState(savedHostState?.pin ? 'Reconnecting to your previous room...' : '');
+  const [resumeNotice, setResumeNotice] = useState(savedHostState?.roomId ? 'Reconnecting to your previous room...' : '');
 
-  const [phase, setPhase] = useState(savedHostState?.pin ? 'lobby' : 'setup');
+  const [phase, setPhase] = useState(savedHostState?.roomId ? 'lobby' : 'setup');
   const [question, setQuestion] = useState(null);
   const [qIndex, setQIndex] = useState(0);
   const [qTotal, setQTotal] = useState(0);
@@ -211,16 +212,16 @@ export default function Host({ onBack, studioQuestions = null }) {
   const modeLabels = { FREE: 'OPEN', RESTRICTED: 'GUIDED', OFF: 'SILENT' };
 
   useEffect(() => {
-    if (!pin && !roomName) return;
+    if (!roomId && !roomName) return;
     persistHostState({
-      pin,
+      roomId,
       roomName,
       players,
       phase,
       deckLabel,
       updatedAt: Date.now(),
     });
-  }, [pin, roomName, players, phase, deckLabel]);
+  }, [roomId, roomName, players, phase, deckLabel]);
 
   useEffect(() => {
     const socket = createGameSocket();
@@ -230,16 +231,16 @@ export default function Host({ onBack, studioQuestions = null }) {
       setConnected(true);
 
       const recoveredState = readHostState();
-      if (resumeAttemptedRef.current || !recoveredState?.pin) return;
+      if (resumeAttemptedRef.current || !recoveredState?.roomId) return;
 
       resumeAttemptedRef.current = true;
       socket.emit(
         'host:resume',
-        { pin: recoveredState.pin, hostSessionId: hostSessionIdRef.current },
+        { hostSessionId: hostSessionIdRef.current },
         (res) => {
           if (!res?.success) {
             clearHostState();
-            setPin(null);
+            setRoomId(null);
             setPlayers([]);
             setPhase('setup');
             setResumeNotice('');
@@ -249,7 +250,7 @@ export default function Host({ onBack, studioQuestions = null }) {
 
           setError('');
           setResumeNotice('');
-          setPin(recoveredState.pin);
+          setRoomId(LAN_ROOM);
           setRoomName(res.roomName || recoveredState.roomName || '');
           setPlayers(Array.isArray(res.players) ? res.players : []);
           setIsDeckReady(Boolean(res.deckSelected));
@@ -304,7 +305,7 @@ export default function Host({ onBack, studioQuestions = null }) {
 
       profilePulseTimersRef.current.set(player.id, timer);
     });
-    socket.on('room_closed', ({ message }) => { setError(message); setPhase('setup'); setPin(null); clearHostState(); });
+    socket.on('room_closed', ({ message }) => { setError(message); setPhase('setup'); setRoomId(null); clearHostState(); });
     socket.on('game_started', () => setPhase('question'));
     socket.on('next_question', ({ question, index, total, durationMs, endsAt }) => {
       setQuestion(question);
@@ -446,7 +447,7 @@ export default function Host({ onBack, studioQuestions = null }) {
   }, []);
 
   const emitSelectedDeck = (deckName, deckSource, deckQuestions) => {
-    if (!pin || !socketRef.current?.connected) {
+    if (!roomId || !socketRef.current?.connected) {
       setError('Room is not connected yet. Try again.');
       return;
     }
@@ -522,7 +523,7 @@ export default function Host({ onBack, studioQuestions = null }) {
 
     socketRef.current.emit('create_room', { roomName, hostSessionId: hostSessionIdRef.current, hostToken }, (res) => {
       if (res.success) {
-        setPin(res.pin);
+        setRoomId(LAN_ROOM);
         setPhase('lobby');
         setSelectedDeckKey('');
         setSelectedDeckSource('none');
@@ -530,7 +531,7 @@ export default function Host({ onBack, studioQuestions = null }) {
         setDeckLabel('No deck selected');
         setIsDeckReady(false);
         if (chatMode) {
-          const modePayload = { pin: res.pin, mode: chatMode, hostToken };
+          const modePayload = { mode: chatMode, hostToken };
           if (chatMode === 'RESTRICTED' && allowedList.length > 0) modePayload.allowed = allowedList;
           socketRef.current.emit('chat:host_set_mode', modePayload, (ack) => {
             if (!ack?.ok) setError(ack?.reason || 'Failed to set chat mode');
@@ -623,7 +624,7 @@ export default function Host({ onBack, studioQuestions = null }) {
         setSelectedDeckCount(validatedDeck.slides.length);
         setDeckLabel(validatedDeck.title);
 
-        if (pin && socketRef.current?.connected) {
+        if (roomId && socketRef.current?.connected) {
           socketRef.current.emit(
             'host:set_deck',
             {
@@ -752,13 +753,13 @@ export default function Host({ onBack, studioQuestions = null }) {
   const handleStart = () => {
     if (!socketRef.current?.connected) return setError('Lost connection.');
     setError('');
-    socketRef.current.emit('start_game', { pin }, (res) => {
+    socketRef.current.emit('start_game', {}, (res) => {
       if (!res?.success) setError(res?.error || 'Could not start.');
     });
   };
 
   const handleNext = () => {
-    socketRef.current.emit('next_question', { pin });
+    socketRef.current.emit('next_question', {});
   };
 
   const handleMute = (socketId) => {
@@ -786,9 +787,9 @@ export default function Host({ onBack, studioQuestions = null }) {
 
   const syncChatMode = (mode, nextAllowed = allowedList) => {
     setChatMode(mode);
-    if (!pin || !socketRef.current?.connected) return;
+    if (!roomId || !socketRef.current?.connected) return;
     setError('');
-    const payload = { pin, mode, hostToken };
+    const payload = { mode, hostToken };
     if (mode === 'RESTRICTED' && nextAllowed.length > 0) payload.allowed = nextAllowed;
     socketRef.current.emit('chat:host_set_mode', payload, (ack) => {
       if (!ack?.ok) setError(ack?.reason || 'Failed to set chat mode');
@@ -818,7 +819,7 @@ export default function Host({ onBack, studioQuestions = null }) {
         : 'text-emerald-300';
 
   const handleBack = () => {
-    const hasActiveRoom = Boolean(pin) || phase !== 'setup';
+    const hasActiveRoom = Boolean(roomId) || phase !== 'setup';
     if (hasActiveRoom) {
       const confirmed = window.confirm('Leave host view? This can disrupt players in the room.');
       if (!confirmed) return;
@@ -1094,7 +1095,7 @@ export default function Host({ onBack, studioQuestions = null }) {
             <section className="min-h-72 rounded-3xl border border-slate-800 bg-slate-900/70 p-4">
               <Chat
                 socket={socketRef.current}
-                roomPin={pin}
+                roomPin={LAN_ROOM}
                 readOnly
                 title="Chat Monitor"
                 allowHostActions
@@ -1145,7 +1146,7 @@ export default function Host({ onBack, studioQuestions = null }) {
 
             <section className="grid gap-4 md:grid-cols-2">
               <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-5">
-                <div className="mb-4 text-[11px] uppercase tracking-[0.26em] text-slate-500">Room PIN & Join Link</div>
+                <div className="mb-4 text-[11px] uppercase tracking-[0.26em] text-slate-500">Join Link</div>
                 <div className="mb-5 rounded-2xl border border-slate-700 bg-slate-950/80 p-4">
                   <p className="mb-3 text-xs text-slate-500">Scan to Join</p>
                   <div className="mx-auto flex w-full max-w-xs items-center justify-center rounded-2xl bg-white p-3 shadow-lg shadow-black/30">
@@ -1160,10 +1161,9 @@ export default function Host({ onBack, studioQuestions = null }) {
                   </div>
                 </div>
 
-                <div className="mb-5 text-center">
-                  <div className="mb-1 text-xs text-slate-500">Room PIN</div>
-                  <div className="text-6xl font-black tracking-tight text-emerald-300 tabular-nums">{pin || '----'}</div>
-                </div>
+                <p className="mb-5 text-center text-xs uppercase tracking-[0.22em] text-slate-500">
+                  Players join directly from the link or QR
+                </p>
 
                 <button onClick={copyLink} className="w-full rounded-xl bg-emerald-400 px-3 py-3 text-sm font-black text-black transition-all duration-150 hover:-translate-y-0.5 hover:bg-emerald-300 active:translate-y-0 active:scale-95">
                   {copied ? 'Copied!' : 'Copy Join Link'}
@@ -1427,7 +1427,7 @@ export default function Host({ onBack, studioQuestions = null }) {
             <section className="min-h-72 rounded-3xl border border-slate-800 bg-slate-900/70 p-4">
               <Chat
                 socket={socketRef.current}
-                roomPin={pin}
+                roomPin={LAN_ROOM}
                 readOnly
                 title="Chat Monitor"
                 allowHostActions
