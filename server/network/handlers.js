@@ -223,6 +223,48 @@ function registerHandlers(socket, io, questions) {
     });
   });
 
+  // ── join (LAN mode) ──────────────────────────────────────────────────────
+  socket.on('join', ({ playerName, playerSessionId }, callback) => {
+    let room = getRoom(LAN_ROOM);
+    
+    // Auto-create LAN_ROOM if it doesn't exist or game is finished
+    if (!room || room.status === 'finished') {
+      const pin = (rooms[LAN_ROOM] = {
+        roomName: 'LocalFlux Game',
+        hostId: null,
+        hostSessionId: null,
+        players: [],
+        status: 'lobby',
+        currentQ: -1,
+        answersIn: {},
+      }, LAN_ROOM);
+      room = getRoom(LAN_ROOM);
+    }
+
+    if (room.status !== 'lobby') {
+      return callback({ success: false, error: 'Game already in progress.' });
+    }
+
+    addPlayer(LAN_ROOM, {
+      id: socket.id,
+      name: playerName || 'Guest',
+      avatarObject: { ...DEFAULT_AVATAR_OBJECT },
+    });
+    socket.playerName = playerName || 'Guest';
+    socket.playerSessionId = playerSessionId || null;
+    socket.join(LAN_ROOM);
+    console.log(`[LAN Join] "${playerName}" → ${LAN_ROOM}`);
+
+    io.to(LAN_ROOM).emit('player_joined', { players: room.players });
+    socket.emit('chat:mode', { mode: chatInstance.mode, allowed: chatInstance.allowed });
+    callback({
+      success: true,
+      roomName: room.roomName,
+      chatMode: chatInstance.mode,
+      chatAllowed: chatInstance.allowed,
+    });
+  });
+
   // ── player:resume ───────────────────────────────────────────────────────
   socket.on('player:resume', ({ pin, playerSessionId }, callback) => {
     const room = getRoom(pin);
