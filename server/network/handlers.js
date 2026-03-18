@@ -116,7 +116,7 @@ function normalizeAvatarObject(input) {
  * @param {import('socket.io').Server} io
  * @param {object[]} questions - Pre-loaded QUESTIONS array from the deck
  */
-function registerHandlers(socket, io, questions) {
+function registerHandlers(socket, io, questions, tokenManager) {
   // create ChatManager singleton when first socket connects
   if (!chatInstance) {
     chatInstance = new ChatManager(io);
@@ -126,6 +126,29 @@ function registerHandlers(socket, io, questions) {
   socket.on('client:ping', ({ timestamp } = {}, callback) => {
     socket.emit('server:pong', { timestamp });
     callback?.({ timestamp });
+  });
+
+  // ── admin:generate-host-token ──────────────────────────────────────────
+  socket.on('admin:generate-host-token', (payload, callback) => {
+    try {
+      const token = tokenManager.generateToken();
+      const ttlMs = tokenManager.getTokenTtl(token);
+      
+      console.log(`[Admin] Generated host token from ${socket.id} (TTL: ${ttlMs}ms)`);
+      
+      callback({
+        success: true,
+        token,
+        ttlMs,
+        message: 'Host token generated successfully.'
+      });
+    } catch (err) {
+      console.error('[Admin] Token generation failed:', err.message);
+      callback({
+        success: false,
+        error: 'Failed to generate host token.'
+      });
+    }
   });
 
   // ── create_room ─────────────────────────────────────────────────────────
