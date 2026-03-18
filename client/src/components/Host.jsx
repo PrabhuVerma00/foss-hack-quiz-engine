@@ -168,6 +168,7 @@ export default function Host({ onBack, studioQuestions = null }) {
   const [allowedList, setAllowedList] = useState([]);
   const [newAllowedText, setNewAllowedText] = useState('');
   const [copied, setCopied] = useState(false);
+  const [isQrFullscreenOpen, setIsQrFullscreenOpen] = useState(false);
   const [availableDecks, setAvailableDecks] = useState([]);
   const [isLoadingBundledDecks, setIsLoadingBundledDecks] = useState(false);
   const [bundledDecksError, setBundledDecksError] = useState('');
@@ -1178,14 +1179,7 @@ export default function Host({ onBack, studioQuestions = null }) {
                 <div className="mb-5 rounded-2xl border border-slate-700 bg-slate-950/80 p-4">
                   <p className="mb-3 text-xs text-slate-500">Scan to Join</p>
                   <div className="mx-auto flex w-full max-w-xs items-center justify-center rounded-2xl bg-white p-3 shadow-lg shadow-black/30">
-                    <div className="relative">
-                      <QRCodeSVG value={joinUrl} size={256} level="H" includeMargin className="h-56 w-56 md:h-64 md:w-64" />
-                      <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                        <div className="rounded-lg border border-emerald-400/40 bg-slate-950 px-2.5 py-1.5 text-[11px] font-black tracking-[0.16em] text-emerald-300 shadow-md shadow-black/30">
-                          LF
-                        </div>
-                      </div>
-                    </div>
+                    <QRCodeSVG value={joinUrl} size={256} level="H" includeMargin className="h-56 w-56 md:h-64 md:w-64" />
                   </div>
                 </div>
 
@@ -1193,9 +1187,17 @@ export default function Host({ onBack, studioQuestions = null }) {
                   Players join directly from the link or QR
                 </p>
 
-                <button onClick={copyLink} className="w-full rounded-xl bg-emerald-400 px-3 py-3 text-sm font-black text-black transition-all duration-150 hover:-translate-y-0.5 hover:bg-emerald-300 active:translate-y-0 active:scale-95">
-                  {copied ? 'Copied!' : 'Copy Join Link'}
-                </button>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <button onClick={copyLink} className="w-full rounded-xl bg-emerald-400 px-3 py-3 text-sm font-black text-black transition-all duration-150 hover:-translate-y-0.5 hover:bg-emerald-300 active:translate-y-0 active:scale-95">
+                    {copied ? 'Copied!' : 'Copy Join Link'}
+                  </button>
+                  <button
+                    onClick={() => setIsQrFullscreenOpen(true)}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-3 text-sm font-black text-slate-100 transition-all duration-150 hover:-translate-y-0.5 hover:border-emerald-400/50 hover:bg-slate-800 active:translate-y-0 active:scale-95"
+                  >
+                    Fullscreen QR
+                  </button>
+                </div>
               </div>
 
               <div
@@ -1469,6 +1471,30 @@ export default function Host({ onBack, studioQuestions = null }) {
             </section>
           </aside>
         </div>
+
+        {isQrFullscreenOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm">
+            <button
+              aria-label="Close fullscreen QR"
+              onClick={() => setIsQrFullscreenOpen(false)}
+              className="absolute inset-0"
+            />
+            <div className="relative z-10 w-full max-w-2xl rounded-3xl border border-slate-700 bg-slate-950/95 p-4 shadow-2xl shadow-black/70">
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Join QR Fullscreen</p>
+                <button
+                  onClick={() => setIsQrFullscreenOpen(false)}
+                  className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:bg-slate-800"
+                >
+                  Close
+                </button>
+              </div>
+              <div className="mx-auto flex w-full max-w-xl items-center justify-center rounded-2xl bg-white p-4">
+                <QRCodeSVG value={joinUrl} size={440} level="H" includeMargin className="h-auto w-full max-w-[440px]" />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
