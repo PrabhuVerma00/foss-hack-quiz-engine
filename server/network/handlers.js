@@ -152,7 +152,7 @@ function registerHandlers(socket, io, questions, tokenManager) {
   });
 
   // ── create_room ─────────────────────────────────────────────────────────
-  socket.on('create_room', ({ roomName, deckQuestions, hostSessionId, hostToken }, callback) => {
+  socket.on('create_room', ({ roomName, hostSessionId, hostToken }, callback) => {
     // Validate host token
     if (!hostToken || !tokenManager.validateToken(hostToken, socket.id)) {
       console.warn(`[Warn] Unauthorized create_room attempt from ${socket.id}`);
@@ -163,21 +163,17 @@ function registerHandlers(socket, io, questions, tokenManager) {
       return callback({ success: false, error: 'Room name is required.' });
     }
 
-    const customQuestions = deckQuestions ? normalizeCustomQuestions(deckQuestions) : null;
-    if (deckQuestions && !customQuestions) {
-      return callback({ success: false, error: 'Invalid deck questions payload.' });
-    }
-
     const lanRoomId = initLanRoom(roomName.trim(), socket.id, hostSessionId || null);
     const room = getRoom();
-    if (customQuestions && room) {
-      room.questions = customQuestions;
+    if (room) {
+      room.questions = [];
+      room.deckMeta = null;
     }
     socket.join(lanRoomId);
     socket.playerName = 'Host';
     console.log(`[Host] "${roomName}" initialized room — LAN_ROOM: ${lanRoomId}`);
     socket.emit('chat:mode', { mode: chatInstance.mode, allowed: chatInstance.allowed });
-    callback({ success: true, pin: lanRoomId, deckSource: customQuestions ? 'studio' : 'default' });
+    callback({ success: true, pin: lanRoomId, deckSource: 'none' });
   });
 
   // ── host:set_deck ────────────────────────────────────────────────────────
@@ -205,7 +201,8 @@ function registerHandlers(socket, io, questions, tokenManager) {
       updatedAt: Date.now(),
     };
 
-    io.to(LAN_ROOM_ID).emit('host:deck_updated', {
+    io.to(LAN_ROOM_ID).emit('room:deck_updated', {
+      selected: true,
       deckName: room.deckMeta.name,
       deckSource: room.deckMeta.source,
       questionCount: room.deckMeta.count,
@@ -236,7 +233,7 @@ function registerHandlers(socket, io, questions, tokenManager) {
     io.to(LAN_ROOM_ID).emit('player_joined', { players: room.players });
     socket.emit('chat:mode', { mode: chatInstance.mode, allowed: chatInstance.allowed });
 
-    const roomQuestions = room.questions || questions;
+    const roomQuestions = Array.isArray(room.questions) ? room.questions : [];
     const currentIndex = Number(room.currentQ);
     const canSyncQuestion =
       room.status === 'started' &&
@@ -248,6 +245,8 @@ function registerHandlers(socket, io, questions, tokenManager) {
       success: true,
       roomName: room.roomName,
       status: room.status,
+      deckSelected: roomQuestions.length > 0,
+      deckMeta: room.deckMeta || null,
       players: room.players,
       currentQ: room.currentQ,
       totalQ: roomQuestions.length,
@@ -284,6 +283,8 @@ function registerHandlers(socket, io, questions, tokenManager) {
       roomName: room.roomName,
       chatMode: chatInstance.mode,
       chatAllowed: chatInstance.allowed,
+      deckSelected: Array.isArray(room.questions) && room.questions.length > 0,
+      deckMeta: room.deckMeta || null,
     });
   });
 
@@ -318,6 +319,8 @@ function registerHandlers(socket, io, questions, tokenManager) {
       roomName: room.roomName,
       chatMode: chatInstance.mode,
       chatAllowed: chatInstance.allowed,
+      deckSelected: Array.isArray(room.questions) && room.questions.length > 0,
+      deckMeta: room.deckMeta || null,
     });
   });
 
@@ -365,7 +368,7 @@ function registerHandlers(socket, io, questions, tokenManager) {
     io.to(LAN_ROOM_ID).emit('player_joined', { players: room.players });
     socket.emit('chat:mode', { mode: chatInstance.mode, allowed: chatInstance.allowed });
 
-    const roomQuestions = room.questions || questions;
+    const roomQuestions = Array.isArray(room.questions) ? room.questions : [];
     const currentIndex = Number(room.currentQ);
     const canSyncQuestion =
       room.status === 'started' &&
@@ -377,6 +380,8 @@ function registerHandlers(socket, io, questions, tokenManager) {
       success: true,
       roomName: room.roomName,
       status: room.status,
+      deckSelected: roomQuestions.length > 0,
+      deckMeta: room.deckMeta || null,
       myScore: me?.score || 0,
       chatMode: chatInstance.mode,
       chatAllowed: chatInstance.allowed,
@@ -430,7 +435,10 @@ function registerHandlers(socket, io, questions, tokenManager) {
     if (!room) return callback({ success: false, error: 'Room not found.' });
     if (room.hostId !== socket.id) return callback({ success: false, error: 'Only the host can start.' });
 
-    const roomQuestions = room.questions || questions;
+    const roomQuestions = Array.isArray(room.questions) ? room.questions : [];
+    if (roomQuestions.length === 0) {
+      return callback({ success: false, error: 'Select a deck before starting the game.' });
+    }
 
     try {
       const firstQ = startGame(room, roomQuestions);
@@ -449,7 +457,7 @@ function registerHandlers(socket, io, questions, tokenManager) {
     const room = getRoom();
     if (!room) return callback?.({ success: false, error: 'Room not found.' });
 
-    const roomQuestions = room.questions || questions;
+    const roomQuestions = Array.isArray(room.questions) ? room.questions : [];
 
     const result = submitAnswer(room, roomQuestions, socket.id, answer);
     console.log(`[Answer] LAN_ROOM Q${room.currentQ} — "${answer}" (${result.correct ? 'correct' : 'wrong'})`);
@@ -472,7 +480,7 @@ function registerHandlers(socket, io, questions, tokenManager) {
     if (!room) return callback?.({ success: false, error: 'Room not found.' });
     if (room.hostId !== socket.id) return callback?.({ success: false, error: 'Only the host can advance.' });
 
-    const roomQuestions = room.questions || questions;
+    const roomQuestions = Array.isArray(room.questions) ? room.questions : [];
 
     try {
       const { result, next, gameOver } = advanceQuestion(room, roomQuestions);
