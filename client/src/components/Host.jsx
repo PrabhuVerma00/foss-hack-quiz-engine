@@ -1,8 +1,10 @@
 ﻿import { useState, useEffect, useRef } from 'react';
+import Papa from 'papaparse';
 import Chat from './Chat';
 import { createGameSocket, getBackendUrl } from '../backendUrl';
 import { useHostToken } from '../context/HostTokenProvider';
 import { deckStudioDB } from '../deckStudio/db';
+import { DeckSchema } from '../deckStudio/schemas';
 import { QRCodeSVG } from 'qrcode.react';
 import { Rocket, Shield, Zap, Flame } from 'lucide-react';
 import PingIndicator from './PingIndicator';
@@ -81,6 +83,76 @@ function studioSlidesToQuestions(slides = []) {
   }));
 }
 
+function uid() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  return `id_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function questionsToDeck(raw, fallbackTitle = 'Imported Deck') {
+  const questions = Array.isArray(raw?.questions) ? raw.questions : [];
+  const meta = raw?.deck_meta || {};
+
+  const slides = questions.map((q, idx) => {
+    const options = Array.isArray(q?.options) ? q.options.map((opt) => String(opt || '').trim()) : [];
+    const normalized = options.slice(0, 4);
+    while (normalized.length < 4) normalized.push('');
+
+    const correctAnswer = String(q?.correct_answer || '').trim();
+    let correctIndex = normalized.findIndex((opt) => opt.toLowerCase() === correctAnswer.toLowerCase());
+    if (correctIndex < 0) correctIndex = 0;
+
+    return {
+      id: String(q?.q_id || `q_${idx + 1}_${uid()}`),
+      prompt: String(q?.prompt || '').trim(),
+      options: normalized,
+      correctIndex,
+      imageUrl: String(q?.asset_ref || '').trim(),
+    };
+  });
+
+  return {
+    id: String(meta.id || `import_${uid()}`),
+    title: String(meta.title || fallbackTitle).trim(),
+    version: String(meta.version || '1.0.0').trim(),
+    slides,
+    updatedAt: Date.now(),
+  };
+}
+
+function csvRowsToDeck(rows, fallbackTitle = 'CSV Import') {
+  const slides = rows
+    .map((row, idx) => {
+      const options = [
+        String(row.optionA || row.a || '').trim(),
+        String(row.optionB || row.b || '').trim(),
+        String(row.optionC || row.c || '').trim(),
+        String(row.optionD || row.d || '').trim(),
+      ];
+
+      const correctRaw = String(row.correct || row.correctOption || '').trim();
+      const byAnswer = options.findIndex((opt) => opt.toLowerCase() === correctRaw.toLowerCase());
+      const byIndex = Number(row.correctIndex);
+      const correctIndex = byAnswer >= 0 ? byAnswer : Number.isInteger(byIndex) ? byIndex : 0;
+
+      return {
+        id: `csv_${idx + 1}_${uid()}`,
+        prompt: String(row.prompt || row.question || '').trim(),
+        options,
+        correctIndex,
+        imageUrl: String(row.imageUrl || row.image || '').trim(),
+      };
+    })
+    .filter((slide) => slide.prompt.length > 0);
+
+  return {
+    id: `import_${uid()}`,
+    title: fallbackTitle,
+    version: '1.0.0',
+    slides,
+    updatedAt: Date.now(),
+  };
+}
+
 export default function Host({ onBack, studioQuestions = null }) {
   const { token: hostToken } = useHostToken();
   const savedHostState = readHostState();
@@ -114,6 +186,8 @@ export default function Host({ onBack, studioQuestions = null }) {
   const [selectedDeckCount, setSelectedDeckCount] = useState(null);
   const [deckLabel, setDeckLabel] = useState('Default');
   const [isDragging, setIsDragging] = useState(false);
+  const [pendingDroppedDeck, setPendingDroppedDeck] = useState(null);
+  const [dropNotice, setDropNotice] = useState('');
   const [recentlyUpdatedPlayerIds, setRecentlyUpdatedPlayerIds] = useState(new Set());
   const [timeLeft, setTimeLeft] = useState(0);
   const [timeTotal, setTimeTotal] = useState(0);
@@ -409,8 +483,71 @@ export default function Host({ onBack, studioQuestions = null }) {
 
   const handleFileDrop = (event) => {
     event.preventDefault();
+    event.stopPropagation();
     setIsDragging(false);
-    setError('Drop parsing is coming next.');
+
+    const file = event.dataTransfer?.files?.[0];
+    if (!file) return;
+
+    const lowerName = String(file.name || '').toLowerCase();
+    const isCsv = lowerName.endsWith('.csv');
+    const isJson = lowerName.endsWith('.json');
+    const isFlux = lowerName.endsWith('.flux');
+
+    if (!isCsv && !isJson && !isFlux) {
+      setError('Unsupported file type. Drop .json, .flux, or .csv only.');
+      setDropNotice('');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onerror = () => {
+      setError('Unable to read dropped file.');
+      setDropNotice('');
+      setPendingDroppedDeck(null);
+    };
+
+    reader.onload = () => {
+      try {
+        const text = String(reader.result || '');
+        let candidateDeck;
+
+        if (isCsv) {
+          const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
+          if (parsed.errors?.length > 0) {
+            throw new Error(parsed.errors[0].message || 'CSV parse failed.');
+          }
+          candidateDeck = csvRowsToDeck(parsed.data, lowerName.replace('.csv', '') || 'CSV Import');
+        } else {
+          const parsedJson = JSON.parse(text);
+          const hasSlides = Array.isArray(parsedJson?.slides);
+          candidateDeck = hasSlides
+            ? {
+                id: String(parsedJson.id || `import_${uid()}`),
+                title: String(parsedJson.title || lowerName || 'Imported Deck').trim(),
+                version: String(parsedJson.version || '1.0.0').trim(),
+                slides: parsedJson.slides,
+                updatedAt: Date.now(),
+              }
+            : questionsToDeck(parsedJson, lowerName.replace(/\.(json|flux)$/i, '') || 'Imported Deck');
+        }
+
+        const checked = DeckSchema.safeParse(candidateDeck);
+        if (!checked.success) {
+          throw new Error(checked.error.issues[0]?.message || 'Deck validation failed.');
+        }
+
+        setPendingDroppedDeck(checked.data);
+        setDropNotice(`Parsed and validated ${checked.data.title}. Ready to load.`);
+        setError('');
+      } catch (err) {
+        setPendingDroppedDeck(null);
+        setDropNotice('');
+        setError(err?.message || 'Failed to parse dropped file.');
+      }
+    };
+
+    reader.readAsText(file);
   };
 
   const handleStart = () => {
@@ -797,6 +934,7 @@ export default function Host({ onBack, studioQuestions = null }) {
                 <div className="mt-4 space-y-1 text-xs text-slate-500">
                   <p>Active source: <span className="text-slate-300">{selectedDeckSource}</span></p>
                   <p>Question count: <span className="text-slate-300">{selectedDeckCount ?? '--'}</span></p>
+                  {dropNotice && <p className="text-emerald-300">{dropNotice}</p>}
                   <button
                     onClick={() => { window.location.href = hostToken ? `/studio?token=${encodeURIComponent(hostToken)}` : '/studio'; }}
                     className="mt-1 rounded-lg border border-amber-400/40 bg-amber-400/10 px-2.5 py-1 text-[11px] font-semibold text-amber-200 transition hover:bg-amber-400/20"
