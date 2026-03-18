@@ -202,8 +202,34 @@ export default function DeckStudio({ onBack, onHostDeck }) {
           <h1 className="text-lg font-black tracking-tight">Deck Studio</h1>
           <p className="mt-1 text-xs text-slate-400">Slide Navigator</p>
         </div>
-        <div className="flex-1 overflow-y-auto p-4 text-xs text-slate-400">
-          Navigator placeholder
+        <div className="flex-1 overflow-y-auto p-4 space-y-2">
+          {deck.slides.map((slide, index) => {
+            const isActive = slide.id === activeSlide?.id;
+            return (
+              <button
+                key={slide.id}
+                onClick={() => selectSlide(slide.id)}
+                className={`w-full rounded-xl border px-3 py-3 text-left transition ${
+                  isActive
+                    ? 'border-emerald-400/70 bg-emerald-500/20'
+                    : 'border-slate-700 bg-slate-900 hover:border-slate-500'
+                }`}
+              >
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-300">Question {index + 1}</p>
+                <p className="mt-1 line-clamp-2 text-xs text-slate-100">
+                  {slide.prompt || 'Untitled question'}
+                </p>
+              </button>
+            );
+          })}
+        </div>
+        <div className="border-t border-slate-700 p-4">
+          <button
+            onClick={onAddQuestion}
+            className="w-full rounded-xl bg-emerald-400 px-3 py-3 text-sm font-black tracking-wide text-black transition hover:bg-emerald-300"
+          >
+            + Add Question
+          </button>
         </div>
       </aside>
 
