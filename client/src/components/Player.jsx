@@ -1,7 +1,6 @@
 ﻿import { useState, useEffect, useRef } from 'react';
 import Chat from './Chat';
 import { createGameSocket } from '../backendUrl';
-import { Rocket, Shield, Zap, Flame } from 'lucide-react';
 
 const LAN_ROOM = 'local_flux_main';
 const PLAYER_SESSION_KEY = 'lf_player_session_id';
@@ -22,24 +21,12 @@ const PRESET_AVATARS = [
   '7dcc3f3eebc2fccd2f9dd3146c61c914.avf',
   'e55afb4aea57bced165fb55ad92addf5.jpg',
 ];
-const GRADIENT_AVATARS = [
-  { value: 'emerald', className: 'bg-gradient-to-br from-emerald-300 via-emerald-500 to-teal-600' },
-  { value: 'sunset', className: 'bg-gradient-to-br from-amber-300 via-orange-500 to-rose-600' },
-  { value: 'ocean', className: 'bg-gradient-to-br from-cyan-300 via-sky-500 to-indigo-700' },
-  { value: 'neon', className: 'bg-gradient-to-br from-lime-300 via-green-500 to-emerald-700' },
-];
-const ICON_AVATARS = [
-  { value: 'rocket', Icon: Rocket },
-  { value: 'shield', Icon: Shield },
-  { value: 'zap', Icon: Zap },
-  { value: 'flame', Icon: Flame },
-];
 
 function normalizeAvatarObject(input) {
-  if (!input || typeof input !== 'object') return { type: 'gradient', value: 'emerald' };
-  if (!['preset', 'gradient', 'icon'].includes(input.type)) return { type: 'gradient', value: 'emerald' };
-  if (!String(input.value || '').trim()) return { type: 'gradient', value: 'emerald' };
-  return { type: input.type, value: String(input.value).trim() };
+  if (!input || typeof input !== 'object') return { type: 'preset', value: '1.jpg' };
+  const value = String(input.value || '').trim();
+  if (input.type !== 'preset' || !value) return { type: 'preset', value: '1.jpg' };
+  return { type: 'preset', value };
 }
 
 function resolvePresetPath(value) {
@@ -97,7 +84,6 @@ export default function Player({ onBack }) {
   const [selfPlayerId, setSelfPlayerId] = useState('');
   const [name, setName] = useState(savedPlayerState?.name || 'Guest');
   const [avatarObject, setAvatarObject] = useState(normalizeAvatarObject(savedPlayerState?.avatarObject));
-  const [avatarTab, setAvatarTab] = useState(savedPlayerState?.avatarObject?.type || 'preset');
   const [isEditingName, setIsEditingName] = useState(false);
   const [hiddenPresetPaths, setHiddenPresetPaths] = useState(() => new Set());
   const [error, setError] = useState('');
@@ -272,32 +258,18 @@ export default function Player({ onBack }) {
   };
 
   const renderAvatarBadge = (sizeClass = 'h-12 w-12') => {
-    if (avatarObject.type === 'preset') {
-      return (
-        <div
-          className={`${sizeClass} rounded-full border border-slate-600 p-1 shadow-inner`}
-          style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)' }}
-        >
-          <img
-            src={resolvePresetPath(avatarObject.value)}
-            alt="Selected avatar"
-            className="h-full w-full rounded-full object-contain drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)]"
-          />
-        </div>
-      );
-    }
-    if (avatarObject.type === 'icon') {
-      const iconEntry = ICON_AVATARS.find((entry) => entry.value === avatarObject.value) || ICON_AVATARS[0];
-      const AvatarIcon = iconEntry.Icon;
-      return (
-        <div className={`${sizeClass} rounded-full border border-emerald-500/40 bg-emerald-500/15 flex items-center justify-center text-emerald-200`}>
-          <AvatarIcon size={22} strokeWidth={2.4} />
-        </div>
-      );
-    }
-
-    const gradient = GRADIENT_AVATARS.find((entry) => entry.value === avatarObject.value)?.className || GRADIENT_AVATARS[0].className;
-    return <div className={`${sizeClass} rounded-full border border-white/20 ${gradient}`} />;
+    return (
+      <div
+        className={`${sizeClass} rounded-full border border-slate-600 p-1 shadow-inner`}
+        style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)' }}
+      >
+        <img
+          src={resolvePresetPath(avatarObject.value)}
+          alt="Selected avatar"
+          className="h-full w-full rounded-full object-contain drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)]"
+        />
+      </div>
+    );
   };
 
   const timerTone =
@@ -514,92 +486,34 @@ export default function Player({ onBack }) {
 
               {isEditingName ? (
                 <>
-                  <div className="mt-4 mb-2 grid grid-cols-3 gap-2 rounded-xl border border-slate-700 bg-slate-900/70 p-1">
-                    {['preset', 'gradient', 'icon'].map((tab) => (
+                  <div className="mt-4 mb-2 grid grid-cols-4 gap-2">
+                    {PRESET_AVATARS.map((presetId) => (
+                      hiddenPresetPaths.has(presetId) ? null :
                       <button
-                        key={tab}
-                        onClick={() => setAvatarTab(tab)}
-                        className={`rounded-lg py-1.5 text-[11px] font-black uppercase tracking-[0.16em] transition ${
-                          avatarTab === tab ? 'bg-emerald-400 text-black' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                        key={presetId}
+                        onClick={() => setAvatarObject({ type: 'preset', value: presetId })}
+                        className={`rounded-xl border p-1 transition ${
+                          avatarObject.value === presetId
+                            ? 'border-emerald-400 ring-2 ring-emerald-500/40'
+                            : 'border-slate-700 hover:border-slate-500'
                         }`}
+                        style={{ background: 'linear-gradient(145deg, #0f172a 0%, #1e293b 100%)' }}
                       >
-                        {tab}
+                        <img
+                          src={resolvePresetPath(presetId)}
+                          alt={`Avatar preset ${presetId}`}
+                          onError={() => {
+                            setHiddenPresetPaths((prev) => {
+                              const next = new Set(prev);
+                              next.add(presetId);
+                              return next;
+                            });
+                          }}
+                          className="h-14 w-full rounded-lg object-contain p-1 drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)] overflow-hidden"
+                        />
                       </button>
                     ))}
                   </div>
-
-                  {avatarTab === 'preset' && (
-                    <div className="grid grid-cols-4 gap-2">
-                      {PRESET_AVATARS.map((presetId) => (
-                        hiddenPresetPaths.has(presetId) ? null :
-                        <button
-                          key={presetId}
-                          onClick={() => setAvatarObject({ type: 'preset', value: presetId })}
-                          className={`rounded-xl border p-1 transition ${
-                            avatarObject.type === 'preset' && avatarObject.value === presetId
-                              ? 'border-emerald-400 ring-2 ring-emerald-500/40'
-                              : 'border-slate-700 hover:border-slate-500'
-                          }`}
-                          style={{ background: 'linear-gradient(145deg, #0f172a 0%, #1e293b 100%)' }}
-                        >
-                          <img
-                            src={resolvePresetPath(presetId)}
-                            alt={`Avatar preset ${presetId}`}
-                            onError={() => {
-                              setHiddenPresetPaths((prev) => {
-                                const next = new Set(prev);
-                                next.add(presetId);
-                                return next;
-                              });
-                            }}
-                            className="h-14 w-full rounded-lg object-contain p-1 drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)] overflow-hidden"
-                          />
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  {avatarTab === 'gradient' && (
-                    <div className="grid grid-cols-4 gap-2">
-                      {GRADIENT_AVATARS.map((entry) => (
-                        <button
-                          key={entry.value}
-                          onClick={() => setAvatarObject({ type: 'gradient', value: entry.value })}
-                          className={`rounded-xl border p-2 transition ${
-                            avatarObject.type === 'gradient' && avatarObject.value === entry.value
-                              ? 'border-emerald-400 ring-2 ring-emerald-500/40'
-                              : 'border-slate-700 hover:border-slate-500'
-                          }`}
-                        >
-                          <div className={`h-10 w-10 mx-auto rounded-full border border-white/20 ${entry.className}`} />
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  {avatarTab === 'icon' && (
-                    <div className="grid grid-cols-4 gap-2">
-                      {ICON_AVATARS.map((entry) => {
-                        const AvatarIcon = entry.Icon;
-                        const selectedIcon = avatarObject.type === 'icon' && avatarObject.value === entry.value;
-                        return (
-                          <button
-                            key={entry.value}
-                            onClick={() => setAvatarObject({ type: 'icon', value: entry.value })}
-                            className={`rounded-xl border p-2 transition ${
-                              selectedIcon
-                                ? 'border-emerald-400 bg-emerald-500/15 ring-2 ring-emerald-500/40 text-emerald-200'
-                                : 'border-slate-700 text-slate-300 hover:border-slate-500'
-                            }`}
-                          >
-                            <div className="h-10 w-10 mx-auto rounded-full border border-current/30 flex items-center justify-center">
-                              <AvatarIcon size={20} strokeWidth={2.3} />
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
 
                   <button
                     onClick={handleSaveProfile}

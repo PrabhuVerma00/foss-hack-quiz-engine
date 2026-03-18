@@ -8,31 +8,17 @@ import { saveDraft } from '../deckStudio/db';
 import { fetchCloudDecks, downloadDeckToLocal } from '../deckStudio/cloudCatalog';
 import { DeckSchema } from '../deckStudio/schemas';
 import { QRCodeSVG } from 'qrcode.react';
-import { Rocket, Shield, Zap, Flame } from 'lucide-react';
 import PingIndicator from './PingIndicator';
 
 const HOST_SESSION_KEY = 'lf_host_session_id';
 const HOST_STATE_KEY = 'lf_host_state';
 const LAN_ROOM = 'local_flux_main';
-const HOST_ICON_AVATARS = {
-  rocket: Rocket,
-  shield: Shield,
-  zap: Zap,
-  flame: Flame,
-};
-const HOST_GRADIENT_AVATARS = {
-  emerald: 'bg-gradient-to-br from-emerald-300 via-emerald-500 to-teal-600',
-  sunset: 'bg-gradient-to-br from-amber-300 via-orange-500 to-rose-600',
-  ocean: 'bg-gradient-to-br from-cyan-300 via-sky-500 to-indigo-700',
-  neon: 'bg-gradient-to-br from-lime-300 via-green-500 to-emerald-700',
-};
 
 function normalizeAvatarObject(input) {
-  if (!input || typeof input !== 'object') return { type: 'gradient', value: 'emerald' };
-  if (!['preset', 'gradient', 'icon'].includes(input.type)) return { type: 'gradient', value: 'emerald' };
+  if (!input || typeof input !== 'object') return { type: 'preset', value: '1.jpg' };
   const value = String(input.value || '').trim();
-  if (!value) return { type: 'gradient', value: 'emerald' };
-  return { type: input.type, value };
+  if (input.type !== 'preset' || !value) return { type: 'preset', value: '1.jpg' };
+  return { type: 'preset', value };
 }
 
 function presetPath(value) {
@@ -885,37 +871,23 @@ export default function Host({ onBack, studioQuestions = null }) {
 
   const renderLobbyAvatar = (player) => {
     const avatarObject = normalizeAvatarObject(player?.avatarObject);
-    if (avatarObject.type === 'preset') {
-      return (
-        <div className="relative mx-auto mb-2 flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-slate-600 bg-gradient-to-br from-slate-900 to-slate-700 p-1">
-          <img
-            src={presetPath(avatarObject.value)}
-            alt={`${player?.name || 'Player'} avatar`}
-            onError={(event) => {
-              event.currentTarget.style.display = 'none';
-              const fallback = event.currentTarget.nextElementSibling;
-              if (fallback) fallback.style.opacity = '1';
-            }}
-            className="h-full w-full rounded-full object-contain drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]"
-          />
-          <span className="absolute inset-0 flex items-center justify-center text-xs font-black text-emerald-200 opacity-0 transition-opacity duration-200">
-            {player?.name?.charAt(0)?.toUpperCase() || '?'}
-          </span>
-        </div>
-      );
-    }
-
-    if (avatarObject.type === 'icon') {
-      const AvatarIcon = HOST_ICON_AVATARS[avatarObject.value] || Rocket;
-      return (
-        <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full border border-emerald-500/40 bg-emerald-500/15 text-emerald-200">
-          <AvatarIcon size={20} strokeWidth={2.3} />
-        </div>
-      );
-    }
-
-    const gradientClass = HOST_GRADIENT_AVATARS[avatarObject.value] || HOST_GRADIENT_AVATARS.emerald;
-    return <div className={`mx-auto mb-2 h-10 w-10 rounded-full border border-white/20 ${gradientClass}`} />;
+    return (
+      <div className="relative mx-auto mb-2 flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-slate-600 bg-gradient-to-br from-slate-900 to-slate-700 p-1">
+        <img
+          src={presetPath(avatarObject.value)}
+          alt={`${player?.name || 'Player'} avatar`}
+          onError={(event) => {
+            event.currentTarget.style.display = 'none';
+            const fallback = event.currentTarget.nextElementSibling;
+            if (fallback) fallback.style.opacity = '1';
+          }}
+          className="h-full w-full rounded-full object-contain drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]"
+        />
+        <span className="absolute inset-0 flex items-center justify-center text-xs font-black text-emerald-200 opacity-0 transition-opacity duration-200">
+          {player?.name?.charAt(0)?.toUpperCase() || '?'}
+        </span>
+      </div>
+    );
   };
 
   if (phase === 'gameover') {
