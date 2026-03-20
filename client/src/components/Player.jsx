@@ -38,6 +38,20 @@ function resolvePresetPath(value) {
 
 function getOrCreatePlayerSessionId() {
   if (typeof window === 'undefined') return '';
+  try {
+    const fromStateRaw = window.localStorage.getItem(PLAYER_STATE_KEY);
+    if (fromStateRaw) {
+      const parsed = JSON.parse(fromStateRaw);
+      const stateSession = String(parsed?.playerSessionId || '').trim();
+      if (stateSession) {
+        window.localStorage.setItem(PLAYER_SESSION_KEY, stateSession);
+        return stateSession;
+      }
+    }
+  } catch {
+    // ignore state parsing errors and continue with fallback key path
+  }
+
   const existing = window.localStorage.getItem(PLAYER_SESSION_KEY);
   if (existing) return existing;
   const next =
@@ -78,7 +92,9 @@ function displayRoomName(name) {
 
 export default function Player({ onBack }) {
   const savedPlayerState = readPlayerState();
+  const savedStateSessionId = String(savedPlayerState?.playerSessionId || '').trim();
   const playerSessionIdRef = useRef(getOrCreatePlayerSessionId());
+  const shouldTryResumeRef = useRef(Boolean(savedStateSessionId));
   const socketRef = useRef(null);
   const [connected, setConnected] = useState(false);
   const [chatSocket, setChatSocket] = useState(null);
@@ -107,6 +123,42 @@ export default function Player({ onBack }) {
   const [joinRetryIn, setJoinRetryIn] = useState(0);
   const roomDisplayName = displayRoomName(roomName);
   const latestNameRef = useRef(name);
+
+  const applyResumePayload = (res) => {
+    setError('');
+    setJoinRetryIn(0);
+    setRoomName(res.roomName || 'LocalFlux Game');
+    if (res.chatMode) setChatMode(res.chatMode);
+    if (Array.isArray(res.chatAllowed)) setChatAllowed(res.chatAllowed);
+    setIsLobbyDeckReady(Boolean(res.deckSelected));
+    setMyScore(Number(res.myScore) || 0);
+
+    const phaseFromServer = String(res.phase || res.status || '').toLowerCase();
+    if (phaseFromServer === 'lobby') {
+      setQuestion(null);
+      setResultData(null);
+      setSelected(null);
+      setPhase('waiting');
+      return;
+    }
+
+    if (phaseFromServer === 'started' && res.activeQuestion) {
+      const { question: activeQuestion, durationMs, endsAt } = res.activeQuestion;
+      const hasAnswered = Boolean(res.hasAnswered);
+      setQuestion(activeQuestion);
+      setResultData(null);
+      setSelected(hasAnswered ? res.answeredValue ?? null : null);
+      const normalizedMs = Number.isFinite(Number(durationMs)) && Number(durationMs) > 0 ? Number(durationMs) : 20000;
+      const targetEndsAt = Number(endsAt) || Date.now() + normalizedMs;
+      setTimeTotal(Math.ceil(normalizedMs / 1000));
+      setQuestionEndsAt(targetEndsAt);
+      setTimeLeft(Math.max(0, Math.ceil((targetEndsAt - Date.now()) / 1000)));
+      setPhase(hasAnswered ? 'answered' : 'question');
+      return;
+    }
+
+    setPhase('waiting');
+  };
 
   const attemptJoinRoom = () => {
     const socket = socketRef.current;
@@ -145,6 +197,39 @@ export default function Player({ onBack }) {
     );
   };
 
+  const attemptResumeRoom = () => {
+    const socket = socketRef.current;
+    if (!socket?.connected) {
+      setError('Connecting to server...');
+      return;
+    }
+
+    const sessionId = String(playerSessionIdRef.current || '').trim();
+    if (!sessionId) {
+      shouldTryResumeRef.current = false;
+      attemptJoinRoom();
+      return;
+    }
+
+    socket.emit('player:resume', { sessionId }, (res) => {
+      if (!res?.success) {
+        shouldTryResumeRef.current = false;
+        attemptJoinRoom();
+        return;
+      }
+
+      applyResumePayload(res);
+    });
+  };
+
+  const attemptEntry = () => {
+    if (shouldTryResumeRef.current) {
+      attemptResumeRoom();
+      return;
+    }
+    attemptJoinRoom();
+  };
+
   useEffect(() => {
     latestNameRef.current = name;
   }, [name]);
@@ -155,6 +240,7 @@ export default function Player({ onBack }) {
       name: name.trim(),
       avatarObject,
       roomName: roomName.trim(),
+      playerSessionId: String(playerSessionIdRef.current || '').trim(),
       updatedAt: Date.now(),
     });
   }, [name, avatarObject, roomName]);
@@ -168,7 +254,7 @@ export default function Player({ onBack }) {
     socket.on('connect', () => {
       setConnected(true);
       setSelfPlayerId(socket.id || '');
-      attemptJoinRoom();
+      attemptEntry();
     });
     socket.on('disconnect', () => {
       setConnected(false);
@@ -226,6 +312,7 @@ export default function Player({ onBack }) {
       setChatSocket(null);
       socket.disconnect();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -233,14 +320,14 @@ export default function Player({ onBack }) {
 
     let remaining = 3;
     const kickoffTimer = window.setTimeout(() => {
-      attemptJoinRoom();
+      attemptEntry();
       setJoinRetryIn(remaining);
     }, 0);
 
     const retryTimer = window.setInterval(() => {
       remaining -= 1;
       if (remaining <= 0) {
-        attemptJoinRoom();
+        attemptEntry();
         remaining = 3;
       }
       setJoinRetryIn(remaining);
@@ -250,6 +337,7 @@ export default function Player({ onBack }) {
       window.clearTimeout(kickoffTimer);
       window.clearInterval(retryTimer);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, connected]);
 
   useEffect(() => {
@@ -676,7 +764,7 @@ export default function Player({ onBack }) {
           )}
           <button
             onClick={() => {
-              attemptJoinRoom();
+              attemptEntry();
               setJoinRetryIn(3);
             }}
             disabled={!connected}
