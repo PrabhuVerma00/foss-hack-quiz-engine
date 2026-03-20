@@ -1,0 +1,39 @@
+{
+  "title": "bollywood",
+  "author": "rajkumar",
+  "total_questions": 2,
+  "questions": [
+    {
+      "q_id": "q1",
+      "type": "image_guess",
+      "prompt": "sdsdad",
+      "asset_ref": null,
+      "image": null,
+      "options": [
+        "sdadas",
+        "asdsada",
+        "sadas",
+        "asdasd"
+      ],
+      "correct_answer": 0,
+      "time_limit_ms": 15000,
+      "fuzzy_allowances": []
+    },
+    {
+      "q_id": "q2",
+      "type": "image_guess",
+      "prompt": "adasdasdsad",
+      "asset_ref": null,
+      "image": null,
+      "options": [
+        "adasdsa",
+        "sdasda",
+        "adasdas",
+        "asdasdas"
+      ],
+      "correct_answer": 0,
+      "time_limit_ms": 15000,
+      "fuzzy_allowances": []
+    }
+  ]
+}

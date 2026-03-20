@@ -1,0 +1,167 @@
+{
+  "title": "Maths Sem2 Btech",
+  "author": "PrabhuVerma",
+  "total_questions": 10,
+  "questions": [
+    {
+      "q_id": "q1",
+      "type": "image_guess",
+      "prompt": "If A is a 3x3 matrix and |A| = 5, then |adj(A)| equals:",
+      "asset_ref": null,
+      "image": null,
+      "options": [
+        "5",
+        "25",
+        "125",
+        "1/5"
+      ],
+      "correct_answer": 1,
+      "time_limit_ms": 15000,
+      "fuzzy_allowances": []
+    },
+    {
+      "q_id": "q2",
+      "type": "image_guess",
+      "prompt": "The rank of a matrix is equal to:",
+      "asset_ref": null,
+      "image": null,
+      "options": [
+        "Number of rows",
+        "Number of columns",
+        "Order of determinant",
+        "Maximum number of linearly independent rows or columns"
+      ],
+      "correct_answer": 3,
+      "time_limit_ms": 15000,
+      "fuzzy_allowances": []
+    },
+    {
+      "q_id": "q3",
+      "type": "image_guess",
+      "prompt": "The Laplace transform of e^(at) is:",
+      "asset_ref": null,
+      "image": null,
+      "options": [
+        "1/(s-a)",
+        "1/(s+a)",
+        "s/(s^2+a^2)",
+        "a/(s^2+a^2)"
+      ],
+      "correct_answer": 0,
+      "time_limit_ms": 15000,
+      "fuzzy_allowances": []
+    },
+    {
+      "q_id": "q4",
+      "type": "image_guess",
+      "prompt": "The inverse Laplace of 1/s is:",
+      "asset_ref": null,
+      "image": null,
+      "options": [
+        "1",
+        "t",
+        "e^t",
+        "0"
+      ],
+      "correct_answer": 0,
+      "time_limit_ms": 15000,
+      "fuzzy_allowances": []
+    },
+    {
+      "q_id": "q5",
+      "type": "image_guess",
+      "prompt": "If y = e^(3x), then dy/dx equals:",
+      "asset_ref": null,
+      "image": null,
+      "options": [
+        "3e^(3x)",
+        "e^(3x)",
+        "3x e^(3x)",
+        "e^(x)"
+      ],
+      "correct_answer": 0,
+      "time_limit_ms": 15000,
+      "fuzzy_allowances": []
+    },
+    {
+      "q_id": "q6",
+      "type": "image_guess",
+      "prompt": "The solution of differential equation dy/dx = y is:",
+      "asset_ref": null,
+      "image": null,
+      "options": [
+        "y = x + C",
+        "y = Ce^x",
+        "y = Cx",
+        "y = e^C"
+      ],
+      "correct_answer": 1,
+      "time_limit_ms": 15000,
+      "fuzzy_allowances": []
+    },
+    {
+      "q_id": "q7",
+      "type": "image_guess",
+      "prompt": "Eigenvalues of an identity matrix of order n are:",
+      "asset_ref": null,
+      "image": null,
+      "options": [
+        "0",
+        "1",
+        "n",
+        "-1"
+      ],
+      "correct_answer": 1,
+      "time_limit_ms": 15000,
+      "fuzzy_allowances": []
+    },
+    {
+      "q_id": "q8",
+      "type": "image_guess",
+      "prompt": "The partial derivative of f(x,y)=x^2y with respect to x is:",
+      "asset_ref": null,
+      "image": null,
+      "options": [
+        "2xy",
+        "x^2",
+        "2x",
+        "y^2"
+      ],
+      "correct_answer": 0,
+      "time_limit_ms": 15000,
+      "fuzzy_allowances": []
+    },
+    {
+      "q_id": "q9",
+      "type": "image_guess",
+      "prompt": "The value of ∫0 to π sin(x) dx is:",
+      "asset_ref": null,
+      "image": null,
+      "options": [
+        "0",
+        "1",
+        "2",
+        "π"
+      ],
+      "correct_answer": 2,
+      "time_limit_ms": 15000,
+      "fuzzy_allowances": []
+    },
+    {
+      "q_id": "q10",
+      "type": "image_guess",
+      "prompt": "If vectors a and b are perpendicular, then a·b equals:",
+      "asset_ref": null,
+      "image": null,
+      "options": [
+        "1",
+        "0",
+        "|a||b|",
+        "-1"
+      ],
+      "correct_answer": 1,
+      "time_limit_ms": 15000,
+      "fuzzy_allowances": []
+    }
+  ]
+}

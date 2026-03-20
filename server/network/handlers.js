@@ -258,30 +258,42 @@ function registerHandlers(socket, io, questions, tokenManager) {
 
     const currentRoom = getRoom();
     if (currentRoom) {
-      if (!hasValidHostSession(currentRoom, hostSessionId)) {
-        return rejectHost(socket, callback);
+      const activeSession = String(currentRoom.hostSessionId || '').trim();
+
+      if (activeSession) {
+        if (!hasValidHostSession(currentRoom, hostSessionId)) {
+          return rejectHost(socket, callback);
+        }
+
+        const existingTimer = hostDisconnectTimers.get(LAN_ROOM_ID);
+        if (existingTimer) {
+          clearTimeout(existingTimer);
+          hostDisconnectTimers.delete(LAN_ROOM_ID);
+        }
+
+        currentRoom.hostId = socket.id;
+        socket.join(LAN_ROOM_ID);
+        socket.playerName = 'Host';
+        socket.emit('chat:mode', { mode: chatInstance.mode, allowed: chatInstance.allowed });
+        io.to(LAN_ROOM_ID).emit('player_joined', { players: currentRoom.players });
+
+        return callback({
+          success: true,
+          roomId: LAN_ROOM_ID,
+          deckSource: currentRoom.deckMeta?.source || 'none',
+          roomName: currentRoom.roomName,
+          status: currentRoom.status,
+          deckSelected: Array.isArray(currentRoom.questions) && currentRoom.questions.length > 0,
+        });
       }
 
+      // Legacy/stale room without a host session lock: clear and allow fresh create.
       const existingTimer = hostDisconnectTimers.get(LAN_ROOM_ID);
       if (existingTimer) {
         clearTimeout(existingTimer);
         hostDisconnectTimers.delete(LAN_ROOM_ID);
       }
-
-      currentRoom.hostId = socket.id;
-      socket.join(LAN_ROOM_ID);
-      socket.playerName = 'Host';
-      socket.emit('chat:mode', { mode: chatInstance.mode, allowed: chatInstance.allowed });
-      io.to(LAN_ROOM_ID).emit('player_joined', { players: currentRoom.players });
-
-      return callback({
-        success: true,
-        roomId: LAN_ROOM_ID,
-        deckSource: currentRoom.deckMeta?.source || 'none',
-        roomName: currentRoom.roomName,
-        status: currentRoom.status,
-        deckSelected: Array.isArray(currentRoom.questions) && currentRoom.questions.length > 0,
-      });
+      deleteRoom();
     }
 
     if (!String(hostSessionId || '').trim()) {

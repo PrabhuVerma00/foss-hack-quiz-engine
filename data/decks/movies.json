@@ -1,0 +1,453 @@
+{
+    "deck_meta": {
+        "id": "deck_auto_movies_001",
+        "title": "Hollywood Blockbusters (Auto-Generated)",
+        "author": "Data Pipeline",
+        "version": "1.0",
+        "total_questions": 26
+    },
+    "questions": [
+        {
+            "q_id": "q_001",
+            "type": "image_guess",
+            "prompt": "Which movie is this frame from?",
+            "asset_ref": "frame_1236153.webp",
+            "options": [
+                "Mercy",
+                "Inception",
+                "The Dark Knight",
+                "Avatar"
+            ],
+            "correct_answer": "Mercy",
+            "time_limit_ms": 15000,
+            "fuzzy_allowances": [
+                "mercy"
+            ]
+        },
+        {
+            "q_id": "q_002",
+            "type": "image_guess",
+            "prompt": "Which actor do these eyes belong to?",
+            "asset_ref": "eyes_73457.webp",
+            "options": [
+                "Chris Pratt",
+                "Brad Pitt",
+                "Tom Cruise",
+                "Leonardo DiCaprio"
+            ],
+            "correct_answer": "Chris Pratt",
+            "time_limit_ms": 15000,
+            "fuzzy_allowances": [
+                "chris pratt"
+            ]
+        },
+        {
+            "q_id": "q_003",
+            "type": "image_guess",
+            "prompt": "Which movie is this frame from?",
+            "asset_ref": "frame_1272837.webp",
+            "options": [
+                "28 Years Later: The Bone Temple",
+                "Inception",
+                "The Dark Knight",
+                "Avatar"
+            ],
+            "correct_answer": "28 Years Later: The Bone Temple",
+            "time_limit_ms": 15000,
+            "fuzzy_allowances": [
+                "28 years later: the bone temple"
+            ]
+        },
+        {
+            "q_id": "q_004",
+            "type": "image_guess",
+            "prompt": "Which movie is this frame from?",
+            "asset_ref": "frame_434853.webp",
+            "options": [
+                "Space/Time",
+                "Inception",
+                "The Dark Knight",
+                "Avatar"
+            ],
+            "correct_answer": "Space/Time",
+            "time_limit_ms": 15000,
+            "fuzzy_allowances": [
+                "space/time"
+            ]
+        },
+        {
+            "q_id": "q_005",
+            "type": "image_guess",
+            "prompt": "Which actor do these eyes belong to?",
+            "asset_ref": "eyes_1632128.webp",
+            "options": [
+                "Ashlee Lollback",
+                "Brad Pitt",
+                "Tom Cruise",
+                "Leonardo DiCaprio"
+            ],
+            "correct_answer": "Ashlee Lollback",
+            "time_limit_ms": 15000,
+            "fuzzy_allowances": [
+                "ashlee lollback"
+            ]
+        },
+        {
+            "q_id": "q_006",
+            "type": "image_guess",
+            "prompt": "Which movie is this frame from?",
+            "asset_ref": "frame_840464.webp",
+            "options": [
+                "Greenland 2: Migration",
+                "Inception",
+                "The Dark Knight",
+                "Avatar"
+            ],
+            "correct_answer": "Greenland 2: Migration",
+            "time_limit_ms": 15000,
+            "fuzzy_allowances": [
+                "greenland 2: migration"
+            ]
+        },
+        {
+            "q_id": "q_007",
+            "type": "image_guess",
+            "prompt": "Which actor do these eyes belong to?",
+            "asset_ref": "eyes_17276.webp",
+            "options": [
+                "Gerard Butler",
+                "Brad Pitt",
+                "Tom Cruise",
+                "Leonardo DiCaprio"
+            ],
+            "correct_answer": "Gerard Butler",
+            "time_limit_ms": 15000,
+            "fuzzy_allowances": [
+                "gerard butler"
+            ]
+        },
+        {
+            "q_id": "q_008",
+            "type": "image_guess",
+            "prompt": "Which movie is this frame from?",
+            "asset_ref": "frame_1253000.webp",
+            "options": [
+                "Deathstalker",
+                "Inception",
+                "The Dark Knight",
+                "Avatar"
+            ],
+            "correct_answer": "Deathstalker",
+            "time_limit_ms": 15000,
+            "fuzzy_allowances": [
+                "deathstalker"
+            ]
+        },
+        {
+            "q_id": "q_009",
+            "type": "image_guess",
+            "prompt": "Which actor do these eyes belong to?",
+            "asset_ref": "eyes_9452.webp",
+            "options": [
+                "Daniel Bernhardt",
+                "Brad Pitt",
+                "Tom Cruise",
+                "Leonardo DiCaprio"
+            ],
+            "correct_answer": "Daniel Bernhardt",
+            "time_limit_ms": 15000,
+            "fuzzy_allowances": [
+                "daniel bernhardt"
+            ]
+        },
+        {
+            "q_id": "q_010",
+            "type": "image_guess",
+            "prompt": "Which movie is this frame from?",
+            "asset_ref": "frame_1634858.webp",
+            "options": [
+                "Cuerno Azulado",
+                "Inception",
+                "The Dark Knight",
+                "Avatar"
+            ],
+            "correct_answer": "Cuerno Azulado",
+            "time_limit_ms": 15000,
+            "fuzzy_allowances": [
+                "cuerno azulado"
+            ]
+        },
+        {
+            "q_id": "q_011",
+            "type": "image_guess",
+            "prompt": "Which movie is this frame from?",
+            "asset_ref": "frame_1419406.webp",
+            "options": [
+                "The Shadow's Edge",
+                "Inception",
+                "The Dark Knight",
+                "Avatar"
+            ],
+            "correct_answer": "The Shadow's Edge",
+            "time_limit_ms": 15000,
+            "fuzzy_allowances": [
+                "the shadow's edge"
+            ]
+        },
+        {
+            "q_id": "q_012",
+            "type": "image_guess",
+            "prompt": "Which actor do these eyes belong to?",
+            "asset_ref": "eyes_18897.webp",
+            "options": [
+                "Jackie Chan",
+                "Brad Pitt",
+                "Tom Cruise",
+                "Leonardo DiCaprio"
+            ],
+            "correct_answer": "Jackie Chan",
+            "time_limit_ms": 15000,
+            "fuzzy_allowances": [
+                "jackie chan"
+            ]
+        },
+        {
+            "q_id": "q_013",
+            "type": "image_guess",
+            "prompt": "Which movie is this frame from?",
+            "asset_ref": "frame_1084242.webp",
+            "options": [
+                "Zootopia 2",
+                "Inception",
+                "The Dark Knight",
+                "Avatar"
+            ],
+            "correct_answer": "Zootopia 2",
+            "time_limit_ms": 15000,
+            "fuzzy_allowances": [
+                "zootopia 2"
+            ]
+        },
+        {
+            "q_id": "q_014",
+            "type": "image_guess",
+            "prompt": "Which movie is this frame from?",
+            "asset_ref": "frame_1168190.webp",
+            "options": [
+                "The Wrecking Crew",
+                "Inception",
+                "The Dark Knight",
+                "Avatar"
+            ],
+            "correct_answer": "The Wrecking Crew",
+            "time_limit_ms": 15000,
+            "fuzzy_allowances": [
+                "the wrecking crew"
+            ]
+        },
+        {
+            "q_id": "q_015",
+            "type": "image_guess",
+            "prompt": "Which actor do these eyes belong to?",
+            "asset_ref": "eyes_543530.webp",
+            "options": [
+                "Dave Bautista",
+                "Brad Pitt",
+                "Tom Cruise",
+                "Leonardo DiCaprio"
+            ],
+            "correct_answer": "Dave Bautista",
+            "time_limit_ms": 15000,
+            "fuzzy_allowances": [
+                "dave bautista"
+            ]
+        },
+        {
+            "q_id": "q_016",
+            "type": "image_guess",
+            "prompt": "Which actor do these eyes belong to?",
+            "asset_ref": "eyes_5037367.webp",
+            "options": [
+                "Veronika Zhuravleva",
+                "Brad Pitt",
+                "Tom Cruise",
+                "Leonardo DiCaprio"
+            ],
+            "correct_answer": "Veronika Zhuravleva",
+            "time_limit_ms": 15000,
+            "fuzzy_allowances": [
+                "veronika zhuravleva"
+            ]
+        },
+        {
+            "q_id": "q_017",
+            "type": "image_guess",
+            "prompt": "Which movie is this frame from?",
+            "asset_ref": "frame_1316092.webp",
+            "options": [
+                "\u201cWuthering Heights\u201d",
+                "Inception",
+                "The Dark Knight",
+                "Avatar"
+            ],
+            "correct_answer": "\u201cWuthering Heights\u201d",
+            "time_limit_ms": 15000,
+            "fuzzy_allowances": [
+                "\u201cwuthering heights\u201d"
+            ]
+        },
+        {
+            "q_id": "q_018",
+            "type": "image_guess",
+            "prompt": "Which actor do these eyes belong to?",
+            "asset_ref": "eyes_234352.webp",
+            "options": [
+                "Margot Robbie",
+                "Brad Pitt",
+                "Tom Cruise",
+                "Leonardo DiCaprio"
+            ],
+            "correct_answer": "Margot Robbie",
+            "time_limit_ms": 15000,
+            "fuzzy_allowances": [
+                "margot robbie"
+            ]
+        },
+        {
+            "q_id": "q_019",
+            "type": "image_guess",
+            "prompt": "Which movie is this frame from?",
+            "asset_ref": "frame_1242898.webp",
+            "options": [
+                "Predator: Badlands",
+                "Inception",
+                "The Dark Knight",
+                "Avatar"
+            ],
+            "correct_answer": "Predator: Badlands",
+            "time_limit_ms": 15000,
+            "fuzzy_allowances": [
+                "predator: badlands"
+            ]
+        },
+        {
+            "q_id": "q_020",
+            "type": "image_guess",
+            "prompt": "Which actor do these eyes belong to?",
+            "asset_ref": "eyes_18050.webp",
+            "options": [
+                "Elle Fanning",
+                "Brad Pitt",
+                "Tom Cruise",
+                "Leonardo DiCaprio"
+            ],
+            "correct_answer": "Elle Fanning",
+            "time_limit_ms": 15000,
+            "fuzzy_allowances": [
+                "elle fanning"
+            ]
+        },
+        {
+            "q_id": "q_021",
+            "type": "image_guess",
+            "prompt": "Which movie is this frame from?",
+            "asset_ref": "frame_1368166.webp",
+            "options": [
+                "The Housemaid",
+                "Inception",
+                "The Dark Knight",
+                "Avatar"
+            ],
+            "correct_answer": "The Housemaid",
+            "time_limit_ms": 15000,
+            "fuzzy_allowances": [
+                "the housemaid"
+            ]
+        },
+        {
+            "q_id": "q_022",
+            "type": "image_guess",
+            "prompt": "Which actor do these eyes belong to?",
+            "asset_ref": "eyes_115440.webp",
+            "options": [
+                "Sydney Sweeney",
+                "Brad Pitt",
+                "Tom Cruise",
+                "Leonardo DiCaprio"
+            ],
+            "correct_answer": "Sydney Sweeney",
+            "time_limit_ms": 15000,
+            "fuzzy_allowances": [
+                "sydney sweeney"
+            ]
+        },
+        {
+            "q_id": "q_023",
+            "type": "image_guess",
+            "prompt": "Which movie is this frame from?",
+            "asset_ref": "frame_1317672.webp",
+            "options": [
+                "Love Me Love Me",
+                "Inception",
+                "The Dark Knight",
+                "Avatar"
+            ],
+            "correct_answer": "Love Me Love Me",
+            "time_limit_ms": 15000,
+            "fuzzy_allowances": [
+                "love me love me"
+            ]
+        },
+        {
+            "q_id": "q_024",
+            "type": "image_guess",
+            "prompt": "Which actor do these eyes belong to?",
+            "asset_ref": "eyes_3791174.webp",
+            "options": [
+                "Pepe Barroso",
+                "Brad Pitt",
+                "Tom Cruise",
+                "Leonardo DiCaprio"
+            ],
+            "correct_answer": "Pepe Barroso",
+            "time_limit_ms": 15000,
+            "fuzzy_allowances": [
+                "pepe barroso"
+            ]
+        },
+        {
+            "q_id": "q_025",
+            "type": "image_guess",
+            "prompt": "Which movie is this frame from?",
+            "asset_ref": "frame_83533.webp",
+            "options": [
+                "Avatar: Fire and Ash",
+                "Inception",
+                "The Dark Knight",
+                "Avatar"
+            ],
+            "correct_answer": "Avatar: Fire and Ash",
+            "time_limit_ms": 15000,
+            "fuzzy_allowances": [
+                "avatar: fire and ash"
+            ]
+        },
+        {
+            "q_id": "q_026",
+            "type": "image_guess",
+            "prompt": "Which actor do these eyes belong to?",
+            "asset_ref": "eyes_65731.webp",
+            "options": [
+                "Sam Worthington",
+                "Brad Pitt",
+                "Tom Cruise",
+                "Leonardo DiCaprio"
+            ],
+            "correct_answer": "Sam Worthington",
+            "time_limit_ms": 15000,
+            "fuzzy_allowances": [
+                "sam worthington"
+            ]
+        }
+    ]
+}
