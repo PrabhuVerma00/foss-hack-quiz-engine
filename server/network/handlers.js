@@ -8,6 +8,9 @@
 
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
+
 const {
   LAN_ROOM_ID,
   initLanRoom,
@@ -48,6 +51,7 @@ const hostDisconnectTimers = new Map();
 const PLAYER_RECONNECT_GRACE_MS = 45000;
 const pendingPlayerReconnect = new Map();
 const playerDisconnectTimers = new Map();
+const HOST_REJECTED_MESSAGE = 'A game is already being hosted on this network.';
 let lastRoomClosedReason = null;
 let lastRoomClosedAt = 0;
 
@@ -165,6 +169,39 @@ function normalizeAvatarObject(input) {
   };
 }
 
+function loadDeckQuestionsFromFile(deckFile) {
+  const requested = String(deckFile || '').trim();
+  if (!requested.endsWith('.json') || requested.includes('/') || requested.includes('\\')) {
+    return null;
+  }
+
+  const decksDir = path.resolve(__dirname, '..', '..', 'data', 'decks');
+  const resolvedDeckPath = path.resolve(decksDir, requested);
+  if (!resolvedDeckPath.startsWith(decksDir)) return null;
+  if (!fs.existsSync(resolvedDeckPath)) return null;
+
+  try {
+    const data = JSON.parse(fs.readFileSync(resolvedDeckPath, 'utf8'));
+    return Array.isArray(data?.questions) ? data.questions : null;
+  } catch {
+    return null;
+  }
+}
+
+function rejectHost(socket, callback, message = HOST_REJECTED_MESSAGE) {
+  const payload = { success: false, error: message, reason: 'host_locked' };
+  socket.emit('host:rejected', { message });
+  callback?.(payload);
+  return false;
+}
+
+function hasValidHostSession(room, hostSessionId) {
+  const activeSession = String(room?.hostSessionId || '').trim();
+  const incomingSession = String(hostSessionId || '').trim();
+  if (!activeSession || !incomingSession) return false;
+  return activeSession === incomingSession;
+}
+
 /**
  * Register all game event handlers on a connected socket.
  *
@@ -219,6 +256,38 @@ function registerHandlers(socket, io, questions, tokenManager) {
       return callback({ success: false, error: 'Room name is required.' });
     }
 
+    const currentRoom = getRoom();
+    if (currentRoom) {
+      if (!hasValidHostSession(currentRoom, hostSessionId)) {
+        return rejectHost(socket, callback);
+      }
+
+      const existingTimer = hostDisconnectTimers.get(LAN_ROOM_ID);
+      if (existingTimer) {
+        clearTimeout(existingTimer);
+        hostDisconnectTimers.delete(LAN_ROOM_ID);
+      }
+
+      currentRoom.hostId = socket.id;
+      socket.join(LAN_ROOM_ID);
+      socket.playerName = 'Host';
+      socket.emit('chat:mode', { mode: chatInstance.mode, allowed: chatInstance.allowed });
+      io.to(LAN_ROOM_ID).emit('player_joined', { players: currentRoom.players });
+
+      return callback({
+        success: true,
+        roomId: LAN_ROOM_ID,
+        deckSource: currentRoom.deckMeta?.source || 'none',
+        roomName: currentRoom.roomName,
+        status: currentRoom.status,
+        deckSelected: Array.isArray(currentRoom.questions) && currentRoom.questions.length > 0,
+      });
+    }
+
+    if (!String(hostSessionId || '').trim()) {
+      return rejectHost(socket, callback, 'Missing host session. Reload the host page and try again.');
+    }
+
     const lanRoomId = initLanRoom(roomName.trim(), socket.id, hostSessionId || null);
     const room = getRoom();
     if (room) {
@@ -235,7 +304,7 @@ function registerHandlers(socket, io, questions, tokenManager) {
   });
 
   // ── host:set_deck ────────────────────────────────────────────────────────
-  socket.on('host:set_deck', ({ deckQuestions, deckName, deckSource, hostToken }, callback) => {
+  socket.on('host:set_deck', ({ deckQuestions, deckName, deckSource, deckFile, hostToken, hostSessionId }, callback) => {
     if (!hostToken || !tokenManager.validateToken(hostToken, socket.id)) {
       console.warn(`[Warn] Unauthorized host:set_deck attempt from ${socket.id}`);
       return callback?.({ ok: false, reason: 'unauthorized' });
@@ -243,10 +312,15 @@ function registerHandlers(socket, io, questions, tokenManager) {
 
     const room = getRoom();
     if (!room) return callback?.({ ok: false, reason: 'room_not_found' });
+    if (!hasValidHostSession(room, hostSessionId)) {
+      rejectHost(socket, null);
+      return callback?.({ ok: false, reason: 'host_locked' });
+    }
     if (room.hostId !== socket.id) return callback?.({ ok: false, reason: 'not_host' });
     if (room.status !== 'lobby') return callback?.({ ok: false, reason: 'room_not_lobby' });
 
-    const customQuestions = normalizeCustomQuestions(deckQuestions);
+    const sourceQuestions = deckFile ? loadDeckQuestionsFromFile(deckFile) : deckQuestions;
+    const customQuestions = normalizeCustomQuestions(sourceQuestions);
     if (!customQuestions) {
       return callback?.({ ok: false, reason: 'invalid_deck_payload' });
     }
@@ -273,8 +347,8 @@ function registerHandlers(socket, io, questions, tokenManager) {
   socket.on('host:resume', ({ hostSessionId }, callback) => {
     const room = getRoom();
     if (!room) return callback?.({ success: false, error: 'Room not found.' });
-    if (!hostSessionId || room.hostSessionId !== hostSessionId) {
-      return callback?.({ success: false, error: 'Session mismatch.' });
+    if (!hasValidHostSession(room, hostSessionId)) {
+      return rejectHost(socket, callback);
     }
 
     const existingTimer = hostDisconnectTimers.get(LAN_ROOM_ID);
@@ -393,27 +467,32 @@ function registerHandlers(socket, io, questions, tokenManager) {
   });
 
   // ── player:resume ───────────────────────────────────────────────────────
-  socket.on('player:resume', ({ playerSessionId }, callback) => {
+  socket.on('player:resume', ({ sessionId, playerSessionId }, callback) => {
+    const effectiveSessionId = String(sessionId || playerSessionId || '').trim();
+    if (!effectiveSessionId) {
+      return callback?.({ success: false, error: 'No resumable player session.' });
+    }
+
     const room = getRoom();
     if (!room) {
-      pendingPlayerReconnect.delete(playerSessionId);
+      pendingPlayerReconnect.delete(effectiveSessionId);
       return callback?.({ success: false, error: 'Room not found.' });
     }
 
-    const pending = pendingPlayerReconnect.get(playerSessionId);
+    const pending = pendingPlayerReconnect.get(effectiveSessionId);
     if (!pending) {
       return callback?.({ success: false, error: 'No resumable player session.' });
     }
 
     if (room.status === 'finished') {
-      pendingPlayerReconnect.delete(playerSessionId);
+      pendingPlayerReconnect.delete(effectiveSessionId);
       return callback?.({ success: false, error: 'Game already finished.' });
     }
 
-    const existingTimer = playerDisconnectTimers.get(playerSessionId);
+    const existingTimer = playerDisconnectTimers.get(effectiveSessionId);
     if (existingTimer) {
       clearTimeout(existingTimer);
-      playerDisconnectTimers.delete(playerSessionId);
+      playerDisconnectTimers.delete(effectiveSessionId);
     }
 
     addPlayer({
@@ -429,9 +508,9 @@ function registerHandlers(socket, io, questions, tokenManager) {
     }
 
     socket.playerName = pending.playerName;
-    socket.playerSessionId = playerSessionId || null;
+    socket.playerSessionId = effectiveSessionId;
     socket.join(LAN_ROOM_ID);
-    pendingPlayerReconnect.delete(playerSessionId);
+    pendingPlayerReconnect.delete(effectiveSessionId);
 
     io.to(LAN_ROOM_ID).emit('player_joined', { players: room.players });
     socket.emit('chat:mode', { mode: chatInstance.mode, allowed: chatInstance.allowed });
@@ -444,17 +523,20 @@ function registerHandlers(socket, io, questions, tokenManager) {
       currentIndex >= 0 &&
       currentIndex < roomQuestions.length;
 
+    const hasAnswered = Object.prototype.hasOwnProperty.call(room.answersIn || {}, socket.id);
+
     return callback?.({
       success: true,
       roomName: room.roomName,
+      phase: room.status,
       status: room.status,
       deckSelected: roomQuestions.length > 0,
       deckMeta: room.deckMeta || null,
       myScore: me?.score || 0,
       chatMode: chatInstance.mode,
       chatAllowed: chatInstance.allowed,
-      alreadyAnswered: pending.lastAnswer !== undefined,
-      answeredValue: pending.lastAnswer,
+      hasAnswered,
+      answeredValue: hasAnswered ? room.answersIn[socket.id] : pending.lastAnswer,
       activeQuestion: canSyncQuestion
         ? withQuestionTiming({
             question: sanitizeQuestion(roomQuestions[currentIndex]),
@@ -498,9 +580,13 @@ function registerHandlers(socket, io, questions, tokenManager) {
   });
 
   // ── start_game ───────────────────────────────────────────────────────────
-  socket.on('start_game', (_payload, callback) => {
+  socket.on('start_game', ({ hostSessionId } = {}, callback) => {
     const room = getRoom();
     if (!room) return callback({ success: false, error: 'Room not found.' });
+    if (!hasValidHostSession(room, hostSessionId)) {
+      rejectHost(socket, null);
+      return callback({ success: false, error: HOST_REJECTED_MESSAGE, reason: 'host_locked' });
+    }
     if (room.hostId !== socket.id) return callback({ success: false, error: 'Only the host can start.' });
 
     const roomQuestions = Array.isArray(room.questions) ? room.questions : [];
@@ -543,9 +629,13 @@ function registerHandlers(socket, io, questions, tokenManager) {
   });
 
   // ── next_question (host advances) ────────────────────────────────────────
-  socket.on('next_question', (_payload, callback) => {
+  socket.on('next_question', ({ hostSessionId } = {}, callback) => {
     const room = getRoom();
     if (!room) return callback?.({ success: false, error: 'Room not found.' });
+    if (!hasValidHostSession(room, hostSessionId)) {
+      rejectHost(socket, null);
+      return callback?.({ success: false, error: HOST_REJECTED_MESSAGE, reason: 'host_locked' });
+    }
     if (room.hostId !== socket.id) return callback?.({ success: false, error: 'Only the host can advance.' });
 
     const roomQuestions = Array.isArray(room.questions) ? room.questions : [];
@@ -575,9 +665,13 @@ function registerHandlers(socket, io, questions, tokenManager) {
   socket.on('chat:pre', (payload, ack) => chatInstance.handleEvent(socket, 'chat:pre', payload, ack));
 
   // host moderation events
-  socket.on('chat:host_mute', ({ target }, callback) => {
+  socket.on('chat:host_mute', ({ target, hostSessionId }, callback) => {
     const room = getRoom();
     if (!room) return callback?.({ ok: false, reason: 'room_not_found' });
+    if (!hasValidHostSession(room, hostSessionId)) {
+      rejectHost(socket, null);
+      return callback?.({ ok: false, reason: 'host_locked' });
+    }
     if (room.hostId !== socket.id) return callback?.({ ok: false, reason: 'not_host' });
     if (!chatInstance) return callback?.({ ok: false });
     chatInstance.mute(target);
@@ -585,9 +679,13 @@ function registerHandlers(socket, io, questions, tokenManager) {
     callback?.({ ok: true });
   });
 
-  socket.on('chat:host_unmute', ({ target }, callback) => {
+  socket.on('chat:host_unmute', ({ target, hostSessionId }, callback) => {
     const room = getRoom();
     if (!room) return callback?.({ ok: false, reason: 'room_not_found' });
+    if (!hasValidHostSession(room, hostSessionId)) {
+      rejectHost(socket, null);
+      return callback?.({ ok: false, reason: 'host_locked' });
+    }
     if (room.hostId !== socket.id) return callback?.({ ok: false, reason: 'not_host' });
     if (!chatInstance) return callback?.({ ok: false });
     chatInstance.unmute(target);
@@ -595,7 +693,7 @@ function registerHandlers(socket, io, questions, tokenManager) {
     callback?.({ ok: true });
   });
 
-  socket.on('host:kick_player', ({ target, hostToken }, callback) => {
+  socket.on('host:kick_player', ({ target, hostToken, hostSessionId }, callback) => {
     // Validate host token
     if (!hostToken || !tokenManager.validateToken(hostToken, socket.id)) {
       console.warn(`[Warn] Unauthorized host:kick_player attempt from ${socket.id}`);
@@ -604,6 +702,10 @@ function registerHandlers(socket, io, questions, tokenManager) {
 
     const room = getRoom();
     if (!room) return callback?.({ ok: false, reason: 'room_not_found' });
+    if (!hasValidHostSession(room, hostSessionId)) {
+      rejectHost(socket, null);
+      return callback?.({ ok: false, reason: 'host_locked' });
+    }
     if (room.hostId !== socket.id) return callback?.({ ok: false, reason: 'not_host' });
 
     const exists = room.players.some((p) => p.id === target);
@@ -627,7 +729,7 @@ function registerHandlers(socket, io, questions, tokenManager) {
   });
 
   // host sets chat mode (OFF | FREE | RESTRICTED) and optional allowed messages
-  socket.on('chat:host_set_mode', ({ mode, allowed, hostToken }, callback) => {
+  socket.on('chat:host_set_mode', ({ mode, allowed, hostToken, hostSessionId }, callback) => {
     // Validate host token
     if (!hostToken || !tokenManager.validateToken(hostToken, socket.id)) {
       console.warn(`[Warn] Unauthorized chat:host_set_mode attempt from ${socket.id}`);
@@ -636,6 +738,10 @@ function registerHandlers(socket, io, questions, tokenManager) {
 
     const room = getRoom();
     if (!room) return callback?.({ ok: false, reason: 'room_not_found' });
+    if (!hasValidHostSession(room, hostSessionId)) {
+      rejectHost(socket, null);
+      return callback?.({ ok: false, reason: 'host_locked' });
+    }
     if (room.hostId !== socket.id) return callback?.({ ok: false, reason: 'not_host' });
     if (!chatInstance) return callback?.({ ok: false });
     try {
@@ -662,13 +768,17 @@ function registerHandlers(socket, io, questions, tokenManager) {
   });
 
   // host explicitly closes the room when leaving host view
-  socket.on('host:close_room', ({ hostToken }, callback) => {
+  socket.on('host:close_room', ({ hostToken, hostSessionId }, callback) => {
     if (!hostToken || !tokenManager.validateToken(hostToken, socket.id)) {
       return callback?.({ ok: false, reason: 'unauthorized' });
     }
 
     const room = getRoom();
     if (!room) return callback?.({ ok: false, reason: 'room_not_found' });
+    if (!hasValidHostSession(room, hostSessionId)) {
+      rejectHost(socket, null);
+      return callback?.({ ok: false, reason: 'host_locked' });
+    }
     if (room.hostId !== socket.id) return callback?.({ ok: false, reason: 'not_host' });
 
     io.to(LAN_ROOM_ID).emit('room_closed', { message: 'Host ended the room.' });

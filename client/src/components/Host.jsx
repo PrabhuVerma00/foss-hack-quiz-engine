@@ -154,6 +154,7 @@ export default function Host({ onBack, studioQuestions = null }) {
   const [roomId, setRoomId] = useState(savedHostState?.roomId || null);
   const [players, setPlayers] = useState(savedHostState?.players || []);
   const [error, setError] = useState('');
+  const [hostRejectedMessage, setHostRejectedMessage] = useState('');
   const [resumeNotice, setResumeNotice] = useState(savedHostState?.roomId ? 'Reconnecting to your previous room...' : '');
 
   const [phase, setPhase] = useState(savedHostState?.roomId ? 'lobby' : 'setup');
@@ -186,6 +187,7 @@ export default function Host({ onBack, studioQuestions = null }) {
   const [isDragging, setIsDragging] = useState(false);
   const [_pendingDroppedDeck, setPendingDroppedDeck] = useState(null);
   const [dropNotice, setDropNotice] = useState('');
+  const [isOnline, setIsOnline] = useState(() => (typeof navigator === 'undefined' ? true : navigator.onLine));
   const [cloudDecks, setCloudDecks] = useState([]);
   const [cloudStatus, setCloudStatus] = useState('idle');
   const [cloudError, setCloudError] = useState('');
@@ -268,6 +270,15 @@ export default function Host({ onBack, studioQuestions = null }) {
       );
     });
     socket.on('disconnect', () => setConnected(false));
+    socket.on('host:rejected', ({ message }) => {
+      const text = message || 'A game is already being hosted on this network.';
+      setHostRejectedMessage(text);
+      setError(text);
+      setRoomId(null);
+      setPhase('setup');
+      setResumeNotice('');
+      clearHostState();
+    });
     // keep host view of chat mode in sync
     socket.on('chat:mode', ({ mode, allowed }) => { setChatMode(mode); if (allowed) setAllowedList(allowed); });
     
@@ -370,6 +381,19 @@ export default function Host({ onBack, studioQuestions = null }) {
     return () => window.clearInterval(timer);
   }, [phase, questionEndsAt]);
 
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
   const loadBundledDecks = useCallback(async () => {
     setIsLoadingBundledDecks(true);
     setBundledDecksError('');
@@ -450,7 +474,7 @@ export default function Host({ onBack, studioQuestions = null }) {
     }
   };
 
-  const emitSelectedDeck = (deckName, deckSource, deckQuestions) => {
+  const emitSelectedDeck = (deckName, deckSource, deckQuestions, deckFile = null) => {
     if (!socketRef.current?.connected) {
       setError('Room is not connected yet. Try again.');
       return;
@@ -459,9 +483,11 @@ export default function Host({ onBack, studioQuestions = null }) {
       'host:set_deck',
       {
         hostToken,
+        hostSessionId: hostSessionIdRef.current,
         deckName,
         deckSource,
         deckQuestions,
+        deckFile,
       },
       (ack) => {
         if (!ack?.ok) {
@@ -505,17 +531,7 @@ export default function Host({ onBack, studioQuestions = null }) {
       setSelectedDeckSource('server');
       setSelectedDeckCount(deck?.count || 0);
       setDeckLabel(deck?.name || 'Bundled Deck');
-      try {
-        const res = await fetch(`${getBackendUrl()}/api/decks/${encodeURIComponent(file)}`);
-        const data = await res.json();
-        if (!Array.isArray(data?.questions)) {
-          throw new Error(data?.error || 'Invalid server deck payload.');
-        }
-        emitSelectedDeck(deck?.name || 'Bundled Deck', 'server', data.questions);
-      } catch (err) {
-        setIsDeckReady(false);
-        setError(err?.message || 'Could not load selected server deck.');
-      }
+      emitSelectedDeck(deck?.name || 'Bundled Deck', 'server', null, file);
     }
   };
 
@@ -633,6 +649,7 @@ export default function Host({ onBack, studioQuestions = null }) {
             'host:set_deck',
             {
               hostToken,
+              hostSessionId: hostSessionIdRef.current,
               deckName: validatedDeck.title,
               deckSource: 'drop',
               deckQuestions,
@@ -789,7 +806,7 @@ export default function Host({ onBack, studioQuestions = null }) {
     setIsStartConfirmArmed(false);
     setIsStartingGame(true);
     setError('');
-    socketRef.current.emit('start_game', {}, (res) => {
+    socketRef.current.emit('start_game', { hostSessionId: hostSessionIdRef.current }, (res) => {
       if (!res?.success) {
         setIsStartingGame(false);
         setError(res?.error || 'Could not start.');
@@ -798,23 +815,23 @@ export default function Host({ onBack, studioQuestions = null }) {
   };
 
   const handleNext = () => {
-    socketRef.current.emit('next_question', {});
+    socketRef.current.emit('next_question', { hostSessionId: hostSessionIdRef.current });
   };
 
   const handleMute = (socketId) => {
-    socketRef.current.emit('chat:host_mute', { target: socketId }, (ack) => {
+    socketRef.current.emit('chat:host_mute', { target: socketId, hostSessionId: hostSessionIdRef.current }, (ack) => {
       if (ack?.ok) setMutedSet((s) => new Set([...s, socketId]));
     });
   };
 
   const handleUnmute = (socketId) => {
-    socketRef.current.emit('chat:host_unmute', { target: socketId }, (ack) => {
+    socketRef.current.emit('chat:host_unmute', { target: socketId, hostSessionId: hostSessionIdRef.current }, (ack) => {
       if (ack?.ok) setMutedSet((s) => { const n = new Set([...s]); n.delete(socketId); return n; });
     });
   };
 
   const handleKick = (socketId) => {
-    socketRef.current.emit('host:kick_player', { target: socketId, hostToken }, (ack) => {
+    socketRef.current.emit('host:kick_player', { target: socketId, hostToken, hostSessionId: hostSessionIdRef.current }, (ack) => {
       if (!ack?.ok) setError('Failed to remove player.');
       setMutedSet((s) => {
         const n = new Set([...s]);
@@ -828,7 +845,7 @@ export default function Host({ onBack, studioQuestions = null }) {
     setChatMode(mode);
     if (!roomId || !socketRef.current?.connected) return;
     setError('');
-    const payload = { mode, hostToken };
+    const payload = { mode, hostToken, hostSessionId: hostSessionIdRef.current };
     if (mode === 'RESTRICTED' && nextAllowed.length > 0) payload.allowed = nextAllowed;
     socketRef.current.emit('chat:host_set_mode', payload, (ack) => {
       if (!ack?.ok) setError(ack?.reason || 'Failed to set chat mode');
@@ -864,7 +881,7 @@ export default function Host({ onBack, studioQuestions = null }) {
       if (!confirmed) return;
 
       if (socketRef.current?.connected && hostToken) {
-        socketRef.current.emit('host:close_room', { hostToken }, () => {});
+        socketRef.current.emit('host:close_room', { hostToken, hostSessionId: hostSessionIdRef.current }, () => {});
       }
     }
     clearHostState();
@@ -1149,6 +1166,30 @@ export default function Host({ onBack, studioQuestions = null }) {
             </div>
           </div>
         )}
+      </div>
+    );
+  }
+
+  if (hostRejectedMessage) {
+    return (
+      <div className="relative min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-6">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(70%_50%_at_50%_0%,rgba(244,63,94,0.18),rgba(2,6,23,0)_70%)]" />
+        <div className="z-10 w-full max-w-xl rounded-3xl border border-rose-500/40 bg-slate-900/85 p-8 shadow-2xl shadow-black/40 animate-phase-in">
+          <p className="text-xs uppercase tracking-[0.24em] text-rose-300">Access Denied</p>
+          <h1 className="mt-3 text-4xl font-black tracking-tight text-white">Host Session Locked</h1>
+          <p className="mt-4 rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+            {hostRejectedMessage}
+          </p>
+          <p className="mt-4 text-xs text-slate-400">
+            Another host session already controls the active room. Use the original host device/session to manage this game.
+          </p>
+          <button
+            onClick={handleBack}
+            className="mt-6 w-full rounded-2xl border border-slate-700 bg-slate-900 py-4 text-lg font-black text-white transition-all duration-150 hover:-translate-y-0.5 hover:border-rose-500/50 hover:bg-slate-800 active:translate-y-0 active:scale-95"
+          >
+            BACK
+          </button>
+        </div>
       </div>
     );
   }
