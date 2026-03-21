@@ -112,6 +112,9 @@ export default function Player({ onBack }) {
   const [phase, setPhase] = useState('joining');
   const [question, setQuestion] = useState(null);
   const [selected, setSelected] = useState(null);
+  const [guessText, setGuessText] = useState('');
+  const [guessFeedback, setGuessFeedback] = useState('');
+  const [answeredCorrect, setAnsweredCorrect] = useState(null);
   const [myScore, setMyScore] = useState(0);
   const [resultData, setResultData] = useState(null);
   const [finalScores, setFinalScores] = useState([]);
@@ -135,6 +138,9 @@ export default function Player({ onBack }) {
   const applyNextQuestion = ({ question: nextQuestion, durationMs, endsAt }) => {
     setQuestion(nextQuestion);
     setSelected(null);
+    setGuessText('');
+    setGuessFeedback('');
+    setAnsweredCorrect(null);
     setResultData(null);
     setNextQuestionIn(0);
     setChatDrawerOpen(false);
@@ -171,12 +177,21 @@ export default function Player({ onBack }) {
       setQuestion(activeQuestion);
       setResultData(null);
       setSelected(hasAnswered ? res.answeredValue ?? null : null);
+      setGuessText('');
+      setGuessFeedback('');
+      const isTypeGuessQuestion = activeQuestion?.answer_mode === 'type_guess';
+      if (hasAnswered && isTypeGuessQuestion) {
+        setAnsweredCorrect(true);
+        setPhase('question');
+      } else {
+        setAnsweredCorrect(null);
+        setPhase(hasAnswered ? 'answered' : 'question');
+      }
       const normalizedMs = Number.isFinite(Number(durationMs)) && Number(durationMs) > 0 ? Number(durationMs) : 20000;
       const targetEndsAt = Number(endsAt) || Date.now() + normalizedMs;
       setTimeTotal(Math.ceil(normalizedMs / 1000));
       setQuestionEndsAt(targetEndsAt);
       setTimeLeft(Math.max(0, Math.ceil((targetEndsAt - Date.now()) / 1000)));
-      setPhase(hasAnswered ? 'answered' : 'question');
       return;
     }
 
@@ -485,9 +500,42 @@ export default function Player({ onBack }) {
   const handleAnswer = (opt) => {
     if (selected) return;
     setSelected(opt);
+    setAnsweredCorrect(null);
+    setGuessFeedback('');
     setChatDrawerOpen(false);
     setPhase('answered');
     socketRef.current.emit('submit_answer', { answer: opt });
+  };
+
+  const handleGuessSubmit = () => {
+    const payload = String(guessText || '').trim();
+    if (!payload || !socketRef.current) return;
+
+    setGuessFeedback('');
+    socketRef.current.emit('player:chat_guess', { text: payload }, (res) => {
+      if (!res?.ok) {
+        if (res?.reason === 'already_answered') {
+          setGuessFeedback('You already submitted your answer this round.');
+          return;
+        }
+        setGuessFeedback('Could not submit guess. Try again.');
+        return;
+      }
+
+      if (res.matched) {
+        setSelected(payload);
+        setAnsweredCorrect(true);
+        setGuessText('');
+        setChatDrawerOpen(false);
+        const points = res.scoreAwarded || 100;
+        setGuessFeedback(`That is correct! +${points} pts`);
+        return;
+      }
+
+      setAnsweredCorrect(false);
+      setGuessText('');
+      setGuessFeedback('Not a match yet. Guess sent to chat.');
+    });
   };
 
   const handleSaveProfile = () => {
@@ -631,7 +679,8 @@ export default function Player({ onBack }) {
   if (phase === 'result' && resultData) {
     const correctAnswer = resultData.correct_answer;
     const hasAnswered = Boolean(selected);
-    const gotIt = hasAnswered && selected === correctAnswer;
+    const isTypeGuessQuestion = question?.answer_mode === 'type_guess';
+    const gotIt = hasAnswered && (answeredCorrect === true || (!isTypeGuessQuestion && selected === correctAnswer));
     return (
       <div className="min-h-screen bg-slate-950 text-white flex flex-col p-4 pt-6 pb-10 animate-phase-in">
         <div className="mb-4 flex items-start justify-between gap-3">
@@ -649,34 +698,47 @@ export default function Player({ onBack }) {
           <p className="text-2xl font-black leading-tight">{question?.prompt}</p>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 content-start">
-          {(Array.isArray(question?.options) ? question.options : []).map((opt, idx) => {
-            const isSelected = selected === opt;
-            const isCorrect = correctAnswer === opt;
-            const baseClass = 'border-slate-700 bg-slate-900 text-slate-200';
+        {isTypeGuessQuestion ? (
+          <div className="grid grid-cols-1 gap-3 content-start">
+            <div className="rounded-2xl border border-emerald-500/40 bg-emerald-500/10 px-5 py-5">
+              <p className="text-[11px] uppercase tracking-[0.2em] text-emerald-300/90">Answer</p>
+              <p className="mt-1 text-xl font-black text-emerald-100">{correctAnswer}</p>
+            </div>
+            <div className={`rounded-2xl border px-5 py-5 ${hasAnswered ? (gotIt ? 'border-emerald-400 bg-emerald-500/10' : 'border-rose-400 bg-rose-500/10') : 'border-slate-700 bg-slate-900/70'}`}>
+              <p className="text-[11px] uppercase tracking-[0.2em] text-slate-400">Your Guess</p>
+              <p className="mt-1 text-lg font-black text-white">{hasAnswered ? selected : 'No guess submitted'}</p>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 content-start">
+            {(Array.isArray(question?.options) ? question.options : []).map((opt, idx) => {
+              const isSelected = selected === opt;
+              const isCorrect = correctAnswer === opt;
+              const baseClass = 'border-slate-700 bg-slate-900 text-slate-200';
 
-            let feedbackClass = baseClass;
-            if (isSelected && hasAnswered) {
-              feedbackClass = gotIt
-                ? 'border-emerald-400 bg-emerald-500/20 text-emerald-100'
-                : 'border-rose-400 bg-rose-500/20 text-rose-100';
-            } else if (isCorrect) {
-              feedbackClass = 'border-emerald-500/50 bg-emerald-500/10 text-emerald-200';
-            }
+              let feedbackClass = baseClass;
+              if (isSelected && hasAnswered) {
+                feedbackClass = gotIt
+                  ? 'border-emerald-400 bg-emerald-500/20 text-emerald-100'
+                  : 'border-rose-400 bg-rose-500/20 text-rose-100';
+              } else if (isCorrect) {
+                feedbackClass = 'border-emerald-500/50 bg-emerald-500/10 text-emerald-200';
+              }
 
-            return (
-              <div
-                key={`${question?.q_id || 'q'}_${idx}_${opt}`}
-                className={`w-full rounded-2xl border px-5 py-6 text-left text-xl font-black ${feedbackClass}`}
-              >
-                {opt}
-              </div>
-            );
-          })}
-        </div>
+              return (
+                <div
+                  key={`${question?.q_id || 'q'}_${idx}_${opt}`}
+                  className={`w-full rounded-2xl border px-5 py-6 text-left text-xl font-black ${feedbackClass}`}
+                >
+                  {opt}
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         <p className="mt-5 text-center text-sm font-semibold text-slate-300">
-          {hasAnswered ? (gotIt ? 'Correct answer locked in.' : 'Your selected answer was incorrect.') : 'You did not submit an answer this round.'}
+          {hasAnswered ? (gotIt ? 'You answered correctly!' : 'Your selected answer was incorrect.') : 'You did not submit an answer this round.'}
         </p>
         <p className="mt-2 text-center font-mono text-sm tabular-nums">Score: <span className="font-black text-amber-300">{myScore}</span></p>
         <p className="mt-2 text-center text-xs uppercase tracking-[0.24em] text-white/60">
@@ -709,7 +771,7 @@ export default function Player({ onBack }) {
     return (
       <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-6 gap-4 animate-phase-in">
         {renderLeaveAndPing()}
-        <p className="text-sm uppercase tracking-[0.24em] text-slate-500">Answer Locked</p>
+        <p className="text-sm uppercase tracking-[0.24em] text-slate-500">Answer Submitted</p>
         <p className="rounded-2xl border border-emerald-500/40 bg-emerald-500/10 px-6 py-4 text-2xl font-black text-emerald-200 shadow-lg shadow-emerald-900/30">{selected}</p>
         <div className={`mt-2 text-3xl font-black tabular-nums ${timeLeft <= 5 ? 'animate-pulse' : ''} ${timerTone}`}>{timeLeft}s</div>
         <div className="mt-3 flex gap-2">
@@ -724,8 +786,9 @@ export default function Player({ onBack }) {
 
   if (phase === 'question' && question) {
     const progress = timeTotal > 0 ? Math.max(0, Math.round((timeLeft / timeTotal) * 100)) : 0;
+    const isTypeGuessQuestion = question?.answer_mode === 'type_guess';
     return (
-      <div className="min-h-screen bg-slate-950 text-white flex flex-col p-4 pt-6 pb-24 md:pb-6 animate-phase-in">
+      <div className={`min-h-screen bg-slate-950 text-white flex flex-col p-4 pt-6 md:pb-6 animate-phase-in ${isTypeGuessQuestion ? 'pb-[62vh]' : 'pb-24'}`}>
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
             {renderLeaveAndPing({ inline: true })}
@@ -748,38 +811,101 @@ export default function Player({ onBack }) {
           <p className="text-2xl font-black leading-tight">{question.prompt}</p>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 content-start">
-          {question.options.map((opt, idx) => (
-            <button
-              key={`${question?.q_id || 'q'}_${idx}_${opt}`}
-              onClick={() => handleAnswer(opt)}
-              className={`w-full rounded-2xl border px-5 py-6 text-left text-xl font-black transition-all duration-150 hover:-translate-y-0.5 active:translate-y-0 active:scale-95 ${
-                idx % 4 === 0
-                  ? 'border-sky-500/40 bg-sky-500/10 text-sky-100 hover:bg-sky-500/20'
-                  : idx % 4 === 1
-                    ? 'border-violet-500/40 bg-violet-500/10 text-violet-100 hover:bg-violet-500/20'
-                    : idx % 4 === 2
-                      ? 'border-rose-500/40 bg-rose-500/10 text-rose-100 hover:bg-rose-500/20'
-                      : 'border-amber-500/40 bg-amber-500/10 text-amber-100 hover:bg-amber-500/20'
-              }`}
-            >
-              {opt}
-            </button>
-          ))}
-        </div>
+        {isTypeGuessQuestion ? (
+          <div className="hidden rounded-2xl border border-slate-800 bg-slate-900/70 p-4 md:block">
+            <p className="mb-3 text-xs uppercase tracking-[0.2em] text-slate-500">Type Your Guess</p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={guessText}
+                onChange={(e) => setGuessText(e.target.value.slice(0, 180))}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !answeredCorrect) handleGuessSubmit();
+                }}
+                placeholder="Type your guess..."
+                disabled={answeredCorrect === true}
+                className={`flex-1 rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none ${answeredCorrect === true ? 'opacity-50 cursor-not-allowed' : ''}`}
+              />
+              <button
+                onClick={handleGuessSubmit}
+                className="rounded-xl bg-emerald-400 px-5 py-3 text-sm font-black text-black transition-all duration-150 hover:-translate-y-0.5 hover:bg-emerald-300 active:translate-y-0 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-emerald-400 disabled:hover:translate-y-0"
+                disabled={!guessText.trim() || answeredCorrect === true}
+              >
+                GUESS
+              </button>
+            </div>
+            {guessFeedback && <p className={`mt-3 text-xs font-semibold ${answeredCorrect === true ? 'text-emerald-300' : 'text-amber-300'}`}>{guessFeedback}</p>}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 content-start">
+            {question.options.map((opt, idx) => (
+              <button
+                key={`${question?.q_id || 'q'}_${idx}_${opt}`}
+                onClick={() => handleAnswer(opt)}
+                className={`w-full rounded-2xl border px-5 py-6 text-left text-xl font-black transition-all duration-150 hover:-translate-y-0.5 active:translate-y-0 active:scale-95 ${
+                  idx % 4 === 0
+                    ? 'border-sky-500/40 bg-sky-500/10 text-sky-100 hover:bg-sky-500/20'
+                    : idx % 4 === 1
+                      ? 'border-violet-500/40 bg-violet-500/10 text-violet-100 hover:bg-violet-500/20'
+                      : idx % 4 === 2
+                        ? 'border-rose-500/40 bg-rose-500/10 text-rose-100 hover:bg-rose-500/20'
+                        : 'border-amber-500/40 bg-amber-500/10 text-amber-100 hover:bg-amber-500/20'
+                }`}
+              >
+                {opt}
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="mt-5 hidden rounded-2xl border border-slate-800 bg-slate-900/70 p-3 md:block">
           <Chat socket={chatSocket} roomPin={LAN_ROOM} title="Room Chat" initialMode={chatMode} initialAllowed={chatAllowed} />
         </div>
 
-        <button
-          onClick={() => setChatDrawerOpen(true)}
-          className="fixed bottom-4 right-4 z-30 rounded-full border border-emerald-500/40 bg-slate-900/95 px-5 py-3 text-sm font-black tracking-[0.16em] text-emerald-300 shadow-lg shadow-black/40 transition-all duration-150 hover:-translate-y-0.5 hover:bg-slate-800 active:translate-y-0 active:scale-95 md:hidden"
-        >
-          CHAT
-        </button>
+        {isTypeGuessQuestion && (
+          <div className="fixed inset-x-0 bottom-0 z-40 h-[58vh] border-t border-slate-700 bg-slate-950/98 p-3 shadow-2xl shadow-black/60 md:hidden">
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">Guess + Chat</p>
+            <div className="mb-2 flex gap-2">
+              <input
+                type="text"
+                value={guessText}
+                onChange={(e) => setGuessText(e.target.value.slice(0, 180))}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !answeredCorrect) handleGuessSubmit();
+                }}
+                placeholder={answeredCorrect ? 'Answer submitted' : 'Type your guess...'}
+                disabled={answeredCorrect === true}
+                className={`flex-1 rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none ${answeredCorrect === true ? 'cursor-not-allowed opacity-50' : ''}`}
+              />
+              <button
+                onClick={handleGuessSubmit}
+                className="rounded-xl bg-emerald-400 px-5 py-3 text-sm font-black text-black transition-all duration-150 hover:-translate-y-0.5 hover:bg-emerald-300 active:translate-y-0 active:scale-95 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
+                disabled={!guessText.trim() || answeredCorrect === true}
+              >
+                GUESS
+              </button>
+            </div>
+            {guessFeedback && (
+              <p className={`mb-2 text-xs font-semibold ${answeredCorrect === true ? 'text-emerald-300' : 'text-amber-300'}`}>
+                {guessFeedback}
+              </p>
+            )}
+            <div className="min-h-0 h-[calc(100%-88px)]">
+              <Chat socket={chatSocket} roomPin={LAN_ROOM} title="Room Chat" initialMode={chatMode} initialAllowed={chatAllowed} />
+            </div>
+          </div>
+        )}
 
-        {chatDrawerOpen && (
+        {!isTypeGuessQuestion && (
+          <button
+            onClick={() => setChatDrawerOpen(true)}
+            className="fixed bottom-4 right-4 z-30 rounded-full border border-emerald-500/40 bg-slate-900/95 px-5 py-3 text-sm font-black tracking-[0.16em] text-emerald-300 shadow-lg shadow-black/40 transition-all duration-150 hover:-translate-y-0.5 hover:bg-slate-800 active:translate-y-0 active:scale-95 md:hidden"
+          >
+            CHAT
+          </button>
+        )}
+
+        {!isTypeGuessQuestion && chatDrawerOpen && (
           <>
             <button
               aria-label="Close chat drawer"
@@ -813,7 +939,7 @@ export default function Player({ onBack }) {
         <p className="text-3xl font-black tracking-tight">{roomDisplayName}</p>
         <p className="text-slate-400 text-sm font-mono">Waiting for host to start...</p>
         <p className={`text-xs font-semibold ${isLobbyDeckReady ? 'text-emerald-300' : 'text-amber-300'}`}>
-          {isLobbyDeckReady ? 'Deck locked in! Get ready.' : 'Waiting for host to choose a deck...'}
+          {isLobbyDeckReady ? 'Deck selected! Get ready.' : 'Waiting for host to choose a deck...'}
         </p>
         <p className={`text-xs font-mono mt-2 ${connected ? 'text-emerald-400' : 'text-amber-300'}`}>
           {connected ? 'connected' : 'reconnecting...'}

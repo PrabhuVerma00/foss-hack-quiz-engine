@@ -46,7 +46,7 @@ function loadDeck(deckPath) {
  * @returns {object} A safe copy with only whitelisted fields.
  */
 function sanitizeQuestion(question) {
-  const SAFE_FIELDS = ['q_id', 'type', 'prompt', 'options', 'time_limit_ms', 'image_url', 'video_url'];
+  const SAFE_FIELDS = ['q_id', 'type', 'prompt', 'options', 'time_limit_ms', 'image_url', 'video_url', 'answer_mode'];
   const safe = {};
   SAFE_FIELDS.forEach(field => {
     if (field in question) safe[field] = question[field];

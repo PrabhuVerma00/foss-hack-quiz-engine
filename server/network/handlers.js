@@ -8,6 +8,9 @@
 
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
+
 const {
   LAN_ROOM_ID,
   initLanRoom,
@@ -21,16 +24,28 @@ const {
 const { startGame, submitAnswer, advanceQuestion } = require('../core/gameEngine');
 const { ChatManager } = require('../core/chatManager');
 const { sanitizeQuestion } = require('../core/deckLoader');
-const {
-  generateJoinProfile,
-  normalizeCustomQuestions,
-  withQuestionTiming,
-  normalizeAvatarObject,
-  loadDeckQuestionsFromFile,
-} = require('./handlerUtils');
-const { createRoundFlow } = require('./roundFlow');
+const { registerTypeGuessHandlers } = require('./typeGuessHandlers');
 
 let chatInstance = null;
+const DEFAULT_AVATAR_OBJECT = { type: 'preset', value: '1.jpg' };
+const PRESET_AVATAR_POOL = [
+  '1.jpg',
+  '2.jpg',
+  '4.jpg',
+  '5.jpg',
+  '11.jpg',
+  '15.jpg',
+  '16.jpg',
+  '18.jpg',
+  '19.jpg',
+  '21.jpg',
+  '22.jpg',
+  '23.jpg',
+  '7dcc3f3eebc2fccd2f9dd3146c61c914.avf',
+  'e55afb4aea57bced165fb55ad92addf5.jpg',
+];
+const NAME_PREFIXES = ['Neo', 'Turbo', 'Solar', 'Nova', 'Glitch', 'Echo', 'Pixel', 'Drift', 'Axel', 'Flux'];
+const NAME_SUFFIXES = ['Rider', 'Nomad', 'Spark', 'Cipher', 'Pilot', 'Comet', 'Vector', 'Pulse', 'Ghost', 'Runner'];
 const LAN_ROOM = 'local_flux_main';
 const HOST_RECONNECT_GRACE_MS = 45000;
 const hostDisconnectTimers = new Map();
@@ -65,6 +80,131 @@ function getJoinUnavailableMessage() {
     return 'Room closed because the host disconnected. Wait for the host to create a new room.';
   }
   return 'Room is not created yet. Wait for the host to create a room.';
+}
+
+function pickRandom(list) {
+  if (!Array.isArray(list) || list.length === 0) return '';
+  const index = Math.floor(Math.random() * list.length);
+  return list[index];
+}
+
+function generateJoinProfile(room) {
+  const existingNames = new Set((room?.players || []).map((p) => String(p?.name || '').toLowerCase()));
+  let candidate = `${pickRandom(NAME_PREFIXES)} ${pickRandom(NAME_SUFFIXES)}`.trim();
+  if (!candidate) candidate = 'Flux Guest';
+
+  if (existingNames.has(candidate.toLowerCase())) {
+    for (let i = 0; i < 12; i += 1) {
+      const withNumber = `${candidate} ${Math.floor(Math.random() * 90) + 10}`;
+      if (!existingNames.has(withNumber.toLowerCase())) {
+        candidate = withNumber;
+        break;
+      }
+    }
+  }
+
+  return {
+    name: candidate,
+    avatarObject: { type: 'preset', value: pickRandom(PRESET_AVATAR_POOL) || DEFAULT_AVATAR_OBJECT.value },
+  };
+}
+
+function normalizeCustomQuestions(input) {
+  if (!Array.isArray(input)) return null;
+  if (input.length === 0 || input.length > 200) return null;
+
+  const normalized = [];
+  for (let i = 0; i < input.length; i += 1) {
+    const q = input[i] || {};
+    const prompt = String(q.prompt || '').trim();
+    const options = Array.isArray(q.options) ? q.options.map((opt) => String(opt || '').trim()) : [];
+    const correctAnswer = String(q.correct_answer || '').trim();
+    const timeLimitMsRaw = Number(q.time_limit_ms);
+    const timeLimitMs = Number.isFinite(timeLimitMsRaw) && timeLimitMsRaw >= 3000 ? timeLimitMsRaw : 20000;
+
+    if (!prompt) return null;
+    if (options.length !== 4) return null;
+    if (options.some((opt) => !opt)) return null;
+    if (!options.includes(correctAnswer)) return null;
+
+    normalized.push({
+      q_id: String(q.q_id || `q_${String(i + 1).padStart(2, '0')}`),
+      type: q.type === 'image_guess' ? 'image_guess' : 'text_only',
+      prompt,
+      options,
+      correct_answer: correctAnswer,
+      time_limit_ms: timeLimitMs,
+      asset_ref: q.asset_ref || null,
+      fuzzy_allowances: Array.isArray(q.fuzzy_allowances) ? q.fuzzy_allowances : [],
+    });
+  }
+
+  return normalized;
+}
+
+function withQuestionTiming(payload) {
+  const now = Date.now();
+  const limitMsRaw = Number(payload?.question?.time_limit_ms);
+  const durationMs = Number.isFinite(limitMsRaw) && limitMsRaw > 0 ? limitMsRaw : 20000;
+  return {
+    ...payload,
+    durationMs,
+    startedAt: now,
+    endsAt: now + durationMs,
+  };
+}
+
+function withAnswerMode(payload, answerMode = 'multiple_choice') {
+  if (!payload || !payload.question) return payload;
+  const nextMode = payload.question.answer_mode || answerMode || 'multiple_choice';
+  return {
+    ...payload,
+    question: {
+      ...payload.question,
+      answer_mode: nextMode,
+    },
+  };
+}
+
+function normalizeAvatarObject(input) {
+  if (!input || typeof input !== 'object') {
+    return { ...DEFAULT_AVATAR_OBJECT };
+  }
+
+  const rawType = String(input.type || '').trim();
+  const rawValue = String(input.value || '').trim();
+
+  if (!rawType || !rawValue) {
+    return { ...DEFAULT_AVATAR_OBJECT };
+  }
+
+  if (!['gradient', 'icon', 'preset'].includes(rawType)) {
+    return { ...DEFAULT_AVATAR_OBJECT };
+  }
+
+  return {
+    type: rawType,
+    value: rawValue.slice(0, 48),
+  };
+}
+
+function loadDeckQuestionsFromFile(deckFile) {
+  const requested = String(deckFile || '').trim();
+  if (!requested.endsWith('.json') || requested.includes('/') || requested.includes('\\')) {
+    return null;
+  }
+
+  const decksDir = path.resolve(__dirname, '..', '..', 'data', 'decks');
+  const resolvedDeckPath = path.resolve(decksDir, requested);
+  if (!resolvedDeckPath.startsWith(decksDir)) return null;
+  if (!fs.existsSync(resolvedDeckPath)) return null;
+
+  try {
+    const data = JSON.parse(fs.readFileSync(resolvedDeckPath, 'utf8'));
+    return Array.isArray(data?.questions) ? data.questions : null;
+  } catch {
+    return null;
+  }
 }
 
 function rejectHost(socket, callback, message = HOST_REJECTED_MESSAGE) {
@@ -110,21 +250,113 @@ function registerHandlers(socket, io, questions, tokenManager) {
     chatInstance = new ChatManager(io);
   }
 
-  const { emitNextQuestionForRound, settleCurrentRound } = createRoundFlow({
+  const emitNextQuestionForRound = (room, nextQuestionPayload) => {
+    const timedPayload = withQuestionTiming(withAnswerMode(nextQuestionPayload, room.answerMode));
+    room.roundSettled = false;
+    room.roundId = Number(room.roundId || 0) + 1;
+
+    io.to(LAN_ROOM_ID).emit('next_question', timedPayload);
+
+    clearTimerByRoom(questionTimeoutTimers, LAN_ROOM_ID);
+    const expectedRoundId = room.roundId;
+    const expectedQuestionIndex = Number(room.currentQ);
+    const timeoutMs = Number(timedPayload.durationMs) > 0 ? Number(timedPayload.durationMs) : 20000;
+
+    const timeoutHandle = setTimeout(() => {
+      const liveRoom = getRoom();
+      if (!liveRoom || liveRoom.status !== 'started') return;
+      if (Number(liveRoom.roundId || 0) !== Number(expectedRoundId)) return;
+      if (Number(liveRoom.currentQ) !== Number(expectedQuestionIndex)) return;
+      settleCurrentRound({ reason: 'timeout' });
+    }, timeoutMs);
+
+    questionTimeoutTimers.set(LAN_ROOM_ID, timeoutHandle);
+  };
+
+  const settleCurrentRound = ({ reason = 'timeout', callback } = {}) => {
+    const room = getRoom();
+    if (!room) {
+      callback?.({ success: false, error: 'Room not found.' });
+      return false;
+    }
+
+    if (room.status !== 'started') {
+      callback?.({ success: false, error: 'Game is not in progress.' });
+      return false;
+    }
+
+    if (room.roundSettled) {
+      callback?.({ success: true, alreadySettled: true });
+      return false;
+    }
+
+    const lockedQuestionIndex = Number(room.currentQ);
+    const lockedRoundId = Number(room.roundId || 0);
+    room.roundSettled = true;
+
+    clearTimerByRoom(questionTimeoutTimers, LAN_ROOM_ID);
+
+    io.to(LAN_ROOM_ID).emit('round:locked', {
+      reason,
+      questionIndex: lockedQuestionIndex,
+      lockMs: ROUND_LOCK_DELAY_MS,
+      answersReceived: Object.keys(room.answersIn || {}).length,
+      totalPlayers: Array.isArray(room.players) ? room.players.length : 0,
+    });
+
+    clearTimerByRoom(roundLockTimers, LAN_ROOM_ID);
+    const lockTimer = setTimeout(() => {
+      const liveRoom = getRoom();
+      if (!liveRoom || liveRoom.status !== 'started') return;
+      if (Number(liveRoom.currentQ) !== lockedQuestionIndex) return;
+      if (Number(liveRoom.roundId || 0) !== lockedRoundId) return;
+
+      const liveQuestions = Array.isArray(liveRoom.questions) ? liveRoom.questions : [];
+
+      try {
+        const { result, next, gameOver } = advanceQuestion(liveRoom, liveQuestions);
+        io.to(LAN_ROOM_ID).emit('question_result', result);
+
+        if (gameOver) {
+          io.to(LAN_ROOM_ID).emit('game_over', gameOver);
+          markRoomClosed('ended');
+          clearRoundTimers(LAN_ROOM_ID);
+          deleteRoom();
+          console.log('[Game] LAN_ROOM finished. Room deleted.');
+          return;
+        }
+
+        io.to(LAN_ROOM_ID).emit('round:transition', {
+          nextInMs: ROUND_TRANSITION_DELAY_MS,
+          nextQuestion: Number(next.index) + 1,
+          totalQuestions: Number(next.total),
+        });
+
+        clearTimerByRoom(roundTransitionTimers, LAN_ROOM_ID);
+        const transitionTimer = setTimeout(() => {
+          const pendingRoom = getRoom();
+          if (!pendingRoom || pendingRoom.status !== 'started') return;
+          if (Number(pendingRoom.currentQ) !== Number(next.index)) return;
+          emitNextQuestionForRound(pendingRoom, next);
+        }, ROUND_TRANSITION_DELAY_MS);
+
+        roundTransitionTimers.set(LAN_ROOM_ID, transitionTimer);
+      } catch (err) {
+        console.error('[Game] Round settle failed:', err.message);
+      }
+    }, ROUND_LOCK_DELAY_MS);
+
+    roundLockTimers.set(LAN_ROOM_ID, lockTimer);
+    callback?.({ success: true, queued: true });
+    return true;
+  };
+
+  registerTypeGuessHandlers({
+    socket,
     io,
-    LAN_ROOM_ID,
-    withQuestionTiming,
     getRoom,
-    deleteRoom,
-    advanceQuestion,
-    markRoomClosed,
-    clearTimerByRoom,
-    clearRoundTimers,
-    questionTimeoutTimers,
-    roundLockTimers,
-    roundTransitionTimers,
-    roundLockDelayMs: ROUND_LOCK_DELAY_MS,
-    roundTransitionDelayMs: ROUND_TRANSITION_DELAY_MS,
+    LAN_ROOM_ID,
+    settleCurrentRound,
   });
 
   // ── client_ping ────────────────────────────────────────────────────────
@@ -208,6 +440,7 @@ function registerHandlers(socket, io, questions, tokenManager) {
         roomName: currentRoom.roomName,
         status: currentRoom.status,
         deckSelected: Array.isArray(currentRoom.questions) && currentRoom.questions.length > 0,
+        answerMode: currentRoom.answerMode || 'multiple_choice',
       });
     }
 
@@ -218,6 +451,7 @@ function registerHandlers(socket, io, questions, tokenManager) {
     if (room) {
       room.questions = [];
       room.deckMeta = null;
+      room.answerMode = room.answerMode || 'multiple_choice';
     }
     lastRoomClosedReason = null;
     lastRoomClosedAt = 0;
@@ -225,7 +459,7 @@ function registerHandlers(socket, io, questions, tokenManager) {
     socket.playerName = 'Host';
     console.log(`[Host] "${roomName}" initialized room — LAN_ROOM: ${lanRoomId}`);
     socket.emit('chat:mode', { mode: chatInstance.mode, allowed: chatInstance.allowed });
-    callback({ success: true, roomId: lanRoomId, deckSource: 'none' });
+    callback({ success: true, roomId: lanRoomId, deckSource: 'none', answerMode: room?.answerMode || 'multiple_choice' });
   });
 
   // ── host:set_deck ────────────────────────────────────────────────────────
@@ -304,15 +538,16 @@ function registerHandlers(socket, io, questions, tokenManager) {
       status: room.status,
       deckSelected: roomQuestions.length > 0,
       deckMeta: room.deckMeta || null,
+      answerMode: room.answerMode || 'multiple_choice',
       players: room.players,
       currentQ: room.currentQ,
       totalQ: roomQuestions.length,
       activeQuestion: canSyncQuestion
-        ? withQuestionTiming({
+        ? withQuestionTiming(withAnswerMode({
             question: roomQuestions[currentIndex],
             index: currentIndex,
             total: roomQuestions.length,
-          })
+          }, room.answerMode))
         : null,
     });
   });
@@ -346,6 +581,7 @@ function registerHandlers(socket, io, questions, tokenManager) {
       chatAllowed: chatInstance.allowed,
       deckSelected: Array.isArray(room.questions) && room.questions.length > 0,
       deckMeta: room.deckMeta || null,
+      answerMode: room.answerMode || 'multiple_choice',
       playerName: assigned.name,
       avatarObject: assigned.avatarObject,
     });
@@ -386,6 +622,7 @@ function registerHandlers(socket, io, questions, tokenManager) {
       chatAllowed: chatInstance.allowed,
       deckSelected: Array.isArray(room.questions) && room.questions.length > 0,
       deckMeta: room.deckMeta || null,
+      answerMode: room.answerMode || 'multiple_choice',
       playerName: assigned.name,
       avatarObject: assigned.avatarObject,
     });
@@ -457,19 +694,45 @@ function registerHandlers(socket, io, questions, tokenManager) {
       status: room.status,
       deckSelected: roomQuestions.length > 0,
       deckMeta: room.deckMeta || null,
+      answerMode: room.answerMode || 'multiple_choice',
       myScore: me?.score || 0,
       chatMode: chatInstance.mode,
       chatAllowed: chatInstance.allowed,
       hasAnswered,
       answeredValue: hasAnswered ? room.answersIn[socket.id] : pending.lastAnswer,
       activeQuestion: canSyncQuestion
-        ? withQuestionTiming({
+        ? withQuestionTiming(withAnswerMode({
             question: sanitizeQuestion(roomQuestions[currentIndex]),
             index: currentIndex,
             total: roomQuestions.length,
-          })
+          }, room.answerMode))
         : null,
     });
+  });
+
+  // ── host:set_answer_mode ───────────────────────────────────────────────
+  socket.on('host:set_answer_mode', ({ mode, hostToken, hostSessionId }, callback) => {
+    if (!hostToken || !tokenManager.validateToken(hostToken, socket.id)) {
+      return callback?.({ ok: false, reason: 'unauthorized' });
+    }
+
+    const room = getRoom();
+    if (!room) return callback?.({ ok: false, reason: 'room_not_found' });
+    if (!hasValidHostSession(room, hostSessionId)) {
+      rejectHost(socket, null);
+      return callback?.({ ok: false, reason: 'host_locked' });
+    }
+    if (room.hostId !== socket.id) return callback?.({ ok: false, reason: 'not_host' });
+    if (room.status !== 'lobby') return callback?.({ ok: false, reason: 'room_not_lobby' });
+
+    const nextMode = String(mode || '').trim();
+    if (!['multiple_choice', 'type_guess'].includes(nextMode)) {
+      return callback?.({ ok: false, reason: 'invalid_mode' });
+    }
+
+    room.answerMode = nextMode;
+    io.to(LAN_ROOM_ID).emit('room:answer_mode', { mode: nextMode });
+    callback?.({ ok: true, mode: nextMode });
   });
 
   // ── player:updateProfile ───────────────────────────────────────────────
@@ -537,6 +800,9 @@ function registerHandlers(socket, io, questions, tokenManager) {
   socket.on('submit_answer', ({ answer }, callback) => {
     const room = getRoom();
     if (!room) return callback?.({ success: false, error: 'Room not found.' });
+    if ((room.answerMode || 'multiple_choice') === 'type_guess') {
+      return callback?.({ success: false, error: 'This round uses type guess input.' });
+    }
 
     const roomQuestions = Array.isArray(room.questions) ? room.questions : [];
 

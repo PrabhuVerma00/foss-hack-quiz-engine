@@ -159,6 +159,7 @@ export default function Host({ onBack, studioQuestions = null }) {
   const [finalScores, setFinalScores] = useState([]);
   const [mutedSet, setMutedSet] = useState(new Set());
   const [chatMode, setChatMode] = useState('RESTRICTED');
+  const [answerMode, setAnswerMode] = useState('multiple_choice');
   const [allowedList, setAllowedList] = useState([]);
   const [newAllowedText, setNewAllowedText] = useState('');
   const [copied, setCopied] = useState(false);
@@ -202,6 +203,11 @@ export default function Host({ onBack, studioQuestions = null }) {
   const profilePulseTimersRef = useRef(new Map());
   const modeOptions = ['FREE', 'RESTRICTED', 'OFF'];
   const modeLabels = { FREE: 'OPEN', RESTRICTED: 'GUIDED', OFF: 'SILENT' };
+  const answerModeOptions = ['multiple_choice', 'type_guess'];
+  const answerModeLabels = {
+    multiple_choice: '4 OPTIONS',
+    type_guess: 'TYPE GUESS',
+  };
 
   useEffect(() => {
     if (!roomId && !roomName) return;
@@ -246,6 +252,7 @@ export default function Host({ onBack, studioQuestions = null }) {
           setRoomName(res.roomName || recoveredState.roomName || '');
           setPlayers(Array.isArray(res.players) ? res.players : []);
           setIsDeckReady(Boolean(res.deckSelected));
+          setAnswerMode(String(res.answerMode || 'multiple_choice'));
           if (res.deckMeta?.name) setDeckLabel(res.deckMeta.name);
           if (typeof res.deckMeta?.count === 'number') setSelectedDeckCount(res.deckMeta.count);
           if (res.deckMeta?.source) setSelectedDeckSource(res.deckMeta.source);
@@ -353,6 +360,10 @@ export default function Host({ onBack, studioQuestions = null }) {
       if (deckName) setDeckLabel(deckName);
       if (deckSource) setSelectedDeckSource(deckSource);
       if (typeof questionCount === 'number') setSelectedDeckCount(questionCount);
+    });
+    socket.on('room:answer_mode', ({ mode }) => {
+      if (!mode) return;
+      setAnswerMode(String(mode));
     });
     socket.on('host_reconnecting', ({ message }) => {
       if (message) setError(message);
@@ -609,6 +620,7 @@ export default function Host({ onBack, studioQuestions = null }) {
       if (res.success) {
         setRoomId(LAN_ROOM);
         setPhase('lobby');
+        setAnswerMode(String(res.answerMode || 'multiple_choice'));
         setSelectedDeckKey('');
         setSelectedDeckSource('none');
         setSelectedDeckCount(null);
@@ -912,6 +924,31 @@ export default function Host({ onBack, studioQuestions = null }) {
     });
   };
 
+  const syncAnswerMode = (mode, options = {}) => {
+    const { requireLobby = true } = options;
+    const normalizedMode = String(mode || '').trim();
+    if (!['multiple_choice', 'type_guess'].includes(normalizedMode)) return;
+    if (requireLobby && phase !== 'lobby') {
+      setError('Answer mode can only be changed in lobby.');
+      return;
+    }
+
+    setAnswerMode(normalizedMode);
+    if (!roomId || !socketRef.current?.connected) return;
+
+    socketRef.current.emit(
+      'host:set_answer_mode',
+      { mode: normalizedMode, hostToken, hostSessionId: hostSessionIdRef.current },
+      (ack) => {
+        if (!ack?.ok) {
+          setError(ack?.reason || 'Failed to set answer mode.');
+          return;
+        }
+        if (ack.mode) setAnswerMode(ack.mode);
+      }
+    );
+  };
+
   const addAllowedMessage = () => {
     const text = newAllowedText.trim();
     if (!text) return;
@@ -963,6 +1000,7 @@ export default function Host({ onBack, studioQuestions = null }) {
     setSelectedDeckKey('');
     setSelectedDeckSource('none');
     setSelectedDeckCount(null);
+    setAnswerMode('multiple_choice');
     setError('');
     setPhase('setup');
   };
@@ -1002,6 +1040,8 @@ export default function Host({ onBack, studioQuestions = null }) {
       setAnswerCount(0);
       setIsDeckReady(false);
       setError('');
+
+      syncAnswerMode(answerMode, { requireLobby: false });
 
       if (chatMode) {
         const modePayload = { mode: chatMode, hostToken };
@@ -1076,7 +1116,7 @@ export default function Host({ onBack, studioQuestions = null }) {
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(70%_50%_at_50%_0%,rgba(244,63,94,0.18),rgba(2,6,23,0)_70%)]" />
         <div className="z-10 w-full max-w-xl rounded-3xl border border-rose-500/40 bg-slate-900/85 p-8 shadow-2xl shadow-black/40 animate-phase-in">
           <p className="text-xs uppercase tracking-[0.24em] text-rose-300">Access Denied</p>
-          <h1 className="mt-3 text-4xl font-black tracking-tight text-white">Host Session Locked</h1>
+          <h1 className="mt-3 text-4xl font-black tracking-tight text-white">Host Session In Use</h1>
           <p className="mt-4 rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
             {hostRejectedMessage}
           </p>
@@ -1121,6 +1161,8 @@ export default function Host({ onBack, studioQuestions = null }) {
         roomId={LAN_ROOM}
         handleMute={handleMute}
         mutedSet={mutedSet}
+        answerMode={answerMode}
+        answerModeLabels={answerModeLabels}
       />
     );
   }
@@ -1177,6 +1219,10 @@ export default function Host({ onBack, studioQuestions = null }) {
         handleStart={handleStart}
         startButtonLabel={startButtonLabel}
         startStatusText={startStatusText}
+        answerMode={answerMode}
+        answerModeOptions={answerModeOptions}
+        answerModeLabels={answerModeLabels}
+        syncAnswerMode={syncAnswerMode}
         modeOptions={modeOptions}
         syncChatMode={syncChatMode}
         chatMode={chatMode}

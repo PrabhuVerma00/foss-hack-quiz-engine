@@ -44,6 +44,7 @@ function initLanRoom(roomName, hostId, hostSessionId = null) {
     status: 'lobby',
     currentQ: -1,
     answersIn: {},
+     answerMode: 'multiple_choice',
   };
   return LAN_ROOM_ID;
 }

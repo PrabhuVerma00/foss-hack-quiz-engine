@@ -21,6 +21,8 @@ export default function HostQuestionView({
   roomId,
   handleMute,
   mutedSet,
+  answerMode,
+  answerModeLabels,
 }) {
   const progress = players.length > 0 ? Math.round((answerCount / players.length) * 100) : 0;
 
@@ -32,6 +34,9 @@ export default function HostQuestionView({
             <div>
               <p className="text-[11px] uppercase tracking-[0.24em] text-slate-500">Question {qIndex + 1} / {qTotal}</p>
               <p className="mt-2 text-sm text-slate-400">{answerCount} of {players.length} players answered</p>
+              <p className="mt-2 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-300">
+                Mode: {answerModeLabels?.[answerMode] || answerMode}
+              </p>
             </div>
             <div className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-right">
               <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">Timer</p>
@@ -47,13 +52,19 @@ export default function HostQuestionView({
             <p className="text-2xl md:text-3xl font-black leading-tight text-white">{question.prompt}</p>
           </div>
 
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            {question.options.map((opt) => (
-              <div key={opt} className="rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm font-semibold text-slate-200">
-                {opt}
-              </div>
-            ))}
-          </div>
+          {answerMode === 'type_guess' ? (
+            <div className="rounded-2xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-5 text-center text-sm text-emerald-200">
+              Players submit guesses as chat messages in this round.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              {question.options.map((opt) => (
+                <div key={opt} className="rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm font-semibold text-slate-200">
+                  {opt}
+                </div>
+              ))}
+            </div>
+          )}
 
           <div className="mt-6 w-full rounded-2xl border border-slate-700 bg-slate-900 py-4 text-center text-lg font-black text-slate-300">
             ANSWER REVEAL IS AUTOMATIC

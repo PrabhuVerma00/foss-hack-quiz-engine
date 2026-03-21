@@ -65,6 +65,10 @@ export default function HostLobbyView({
   handleStart,
   startButtonLabel,
   startStatusText,
+  answerMode,
+  answerModeOptions,
+  answerModeLabels,
+  syncAnswerMode,
   modeOptions,
   syncChatMode,
   chatMode,
@@ -380,7 +384,24 @@ export default function HostLobbyView({
                 </button>
                 <p className={`mt-2 text-xs ${startReady ? 'text-emerald-300' : 'text-amber-300'}`}>{startStatusText}</p>
               </div>
-              <p className="text-sm text-slate-400">Room ready. Once started, players enter timed questions instantly.</p>
+              <div>
+                <p className="mb-2 text-[11px] uppercase tracking-[0.2em] text-slate-500">Answer Mode</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {answerModeOptions.map((mode) => (
+                    <button
+                      key={mode}
+                      onClick={() => syncAnswerMode(mode)}
+                      className={`rounded-xl px-3 py-2 text-[11px] font-black tracking-[0.2em] transition-all duration-150 ${
+                        answerMode === mode
+                          ? 'bg-emerald-400 text-black'
+                          : 'bg-slate-950 text-slate-400 hover:bg-slate-800 hover:text-white'
+                      }`}
+                    >
+                      {answerModeLabels[mode] || mode}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           </footer>
         </div>
