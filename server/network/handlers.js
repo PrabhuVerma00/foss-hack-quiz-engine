@@ -13,67 +13,51 @@ const path = require('path');
 
 const {
   LAN_ROOM_ID,
-  initLanRoom,
   getRoom,
-  deleteRoom,
-  addPlayer,
-  removePlayer,
-  getHostId,
-} = require('../core/roomStore');
-
-const { startGame, submitAnswer, advanceQuestion } = require('../core/gameEngine');
-const { ChatManager } = require('../core/chatManager');
-const { sanitizeQuestion } = require('../core/deckLoader');
-
-let chatInstance = null;
-const DEFAULT_AVATAR_OBJECT = { type: 'preset', value: '1.jpg' };
-const PRESET_AVATAR_POOL = [
-  '1.jpg',
-  '2.jpg',
-  '4.jpg',
-  '5.jpg',
-  '11.jpg',
-  '15.jpg',
-  '16.jpg',
-  '18.jpg',
-  '19.jpg',
-  '21.jpg',
-  '22.jpg',
-  '23.jpg',
-  '7dcc3f3eebc2fccd2f9dd3146c61c914.avf',
-  'e55afb4aea57bced165fb55ad92addf5.jpg',
-];
-const NAME_PREFIXES = ['Neo', 'Turbo', 'Solar', 'Nova', 'Glitch', 'Echo', 'Pixel', 'Drift', 'Axel', 'Flux'];
 const NAME_SUFFIXES = ['Rider', 'Nomad', 'Spark', 'Cipher', 'Pilot', 'Comet', 'Vector', 'Pulse', 'Ghost', 'Runner'];
 const LAN_ROOM = 'local_flux_main';
 const HOST_RECONNECT_GRACE_MS = 45000;
-const hostDisconnectTimers = new Map();
-const PLAYER_RECONNECT_GRACE_MS = 45000;
-const pendingPlayerReconnect = new Map();
-const playerDisconnectTimers = new Map();
-const HOST_REJECTED_MESSAGE = 'A game is already being hosted on this network.';
-let lastRoomClosedReason = null;
-let lastRoomClosedAt = 0;
+      if (activeSession) {
+        if (!hasValidHostSession(currentRoom, hostSessionId)) {
+          return rejectHost(socket, callback);
+        }
 
-function markRoomClosed(reason) {
-  lastRoomClosedReason = reason;
-  lastRoomClosedAt = Date.now();
-}
+        // In non-strict mode, transfer host control to the latest valid host token holder.
+        if (previousHostId && previousHostId !== socket.id) {
+          io.to(previousHostId).emit('host:rejected', { message: 'Host control transferred to a new host session.' });
+        }
+        currentRoom.hostSessionId = incomingSession || currentRoom.hostSessionId || `legacy_${socket.id}`;
 
-function getJoinUnavailableMessage() {
-  const isRecentClosure = lastRoomClosedAt > 0 && Date.now() - lastRoomClosedAt < 6 * 60 * 60 * 1000;
-  if (!isRecentClosure) {
-    return 'Room is not created yet. Wait for the host to create a room.';
-  }
+        const existingTimer = hostDisconnectTimers.get(LAN_ROOM_ID);
+        if (existingTimer) {
+          clearTimeout(existingTimer);
+          hostDisconnectTimers.delete(LAN_ROOM_ID);
+        }
 
-  if (lastRoomClosedReason === 'ended') {
-    return 'Room has ended. Wait for the host to create a new room.';
-  }
-  if (lastRoomClosedReason === 'host_disconnected') {
-    return 'Room closed because the host disconnected. Wait for the host to create a new room.';
-  }
-  return 'Room is not created yet. Wait for the host to create a room.';
-}
+        currentRoom.hostId = socket.id;
+        socket.join(LAN_ROOM_ID);
+        socket.playerName = 'Host';
+        socket.emit('chat:mode', { mode: chatInstance.mode, allowed: chatInstance.allowed });
+        io.to(LAN_ROOM_ID).emit('player_joined', { players: currentRoom.players });
+
+        return callback({
+          success: true,
+          roomId: LAN_ROOM_ID,
+          deckSource: currentRoom.deckMeta?.source || 'none',
+          roomName: currentRoom.roomName,
+          status: currentRoom.status,
+          deckSelected: Array.isArray(currentRoom.questions) && currentRoom.questions.length > 0,
+          answerMode: currentRoom.answerMode || 'multiple_choice',
+        });
+      }
+
+      // Legacy/stale room without a host session lock: clear and allow fresh create.
+      const existingTimer = hostDisconnectTimers.get(LAN_ROOM_ID);
+      if (existingTimer) {
+        clearTimeout(existingTimer);
+        hostDisconnectTimers.delete(LAN_ROOM_ID);
+      }
+      deleteRoom();
 
 function pickRandom(list) {
   if (!Array.isArray(list) || list.length === 0) return '';
@@ -147,6 +131,18 @@ function withQuestionTiming(payload) {
   };
 }
 
+function withAnswerMode(payload, answerMode = 'multiple_choice') {
+  if (!payload || !payload.question) return payload;
+  const nextMode = payload.question.answer_mode || answerMode || 'multiple_choice';
+  return {
+    ...payload,
+    question: {
+      ...payload.question,
+      answer_mode: nextMode,
+    },
+  };
+}
+
 function normalizeAvatarObject(input) {
   if (!input || typeof input !== 'object') {
     return { ...DEFAULT_AVATAR_OBJECT };
@@ -196,10 +192,26 @@ function rejectHost(socket, callback, message = HOST_REJECTED_MESSAGE) {
 }
 
 function hasValidHostSession(room, hostSessionId) {
+  if (!ENFORCE_HOST_SESSION) return true;
+
   const activeSession = String(room?.hostSessionId || '').trim();
   const incomingSession = String(hostSessionId || '').trim();
   if (!activeSession || !incomingSession) return false;
   return activeSession === incomingSession;
+}
+
+function clearTimerByRoom(timerMap, roomId) {
+  const active = timerMap.get(roomId);
+  if (active) {
+    clearTimeout(active);
+    timerMap.delete(roomId);
+  }
+}
+
+function clearRoundTimers(roomId) {
+  clearTimerByRoom(questionTimeoutTimers, roomId);
+  clearTimerByRoom(roundLockTimers, roomId);
+  clearTimerByRoom(roundTransitionTimers, roomId);
 }
 
 /**
@@ -215,10 +227,129 @@ function registerHandlers(socket, io, questions, tokenManager) {
     chatInstance = new ChatManager(io);
   }
 
-  // ── client:ping ────────────────────────────────────────────────────────
+  const emitNextQuestionForRound = (room, nextQuestionPayload) => {
+    const timedPayload = withQuestionTiming(withAnswerMode(nextQuestionPayload, room.answerMode));
+    room.roundSettled = false;
+    room.roundId = Number(room.roundId || 0) + 1;
+
+    io.to(LAN_ROOM_ID).emit('next_question', timedPayload);
+
+    clearTimerByRoom(questionTimeoutTimers, LAN_ROOM_ID);
+    const expectedRoundId = room.roundId;
+    const expectedQuestionIndex = Number(room.currentQ);
+    const timeoutMs = Number(timedPayload.durationMs) > 0 ? Number(timedPayload.durationMs) : 20000;
+
+    const timeoutHandle = setTimeout(() => {
+      const liveRoom = getRoom();
+      if (!liveRoom || liveRoom.status !== 'started') return;
+      if (Number(liveRoom.roundId || 0) !== Number(expectedRoundId)) return;
+      if (Number(liveRoom.currentQ) !== Number(expectedQuestionIndex)) return;
+      settleCurrentRound({ reason: 'timeout' });
+    }, timeoutMs);
+
+    questionTimeoutTimers.set(LAN_ROOM_ID, timeoutHandle);
+  };
+
+  const settleCurrentRound = ({ reason = 'timeout', callback } = {}) => {
+    const room = getRoom();
+    if (!room) {
+      callback?.({ success: false, error: 'Room not found.' });
+      return false;
+    }
+
+    if (room.status !== 'started') {
+      callback?.({ success: false, error: 'Game is not in progress.' });
+      return false;
+    }
+
+    if (room.roundSettled) {
+      callback?.({ success: true, alreadySettled: true });
+      return false;
+    }
+
+    const lockedQuestionIndex = Number(room.currentQ);
+    const lockedRoundId = Number(room.roundId || 0);
+    room.roundSettled = true;
+
+    clearTimerByRoom(questionTimeoutTimers, LAN_ROOM_ID);
+
+    io.to(LAN_ROOM_ID).emit('round:locked', {
+      reason,
+      questionIndex: lockedQuestionIndex,
+      lockMs: ROUND_LOCK_DELAY_MS,
+      answersReceived: Object.keys(room.answersIn || {}).length,
+      totalPlayers: Array.isArray(room.players) ? room.players.length : 0,
+    });
+
+    clearTimerByRoom(roundLockTimers, LAN_ROOM_ID);
+    const lockTimer = setTimeout(() => {
+      const liveRoom = getRoom();
+      if (!liveRoom || liveRoom.status !== 'started') return;
+      if (Number(liveRoom.currentQ) !== lockedQuestionIndex) return;
+      if (Number(liveRoom.roundId || 0) !== lockedRoundId) return;
+
+      const liveQuestions = Array.isArray(liveRoom.questions) ? liveRoom.questions : [];
+
+      try {
+        const { result, next, gameOver } = advanceQuestion(liveRoom, liveQuestions);
+        io.to(LAN_ROOM_ID).emit('question_result', result);
+
+        if (gameOver) {
+          io.to(LAN_ROOM_ID).emit('game_over', gameOver);
+          markRoomClosed('ended');
+          clearRoundTimers(LAN_ROOM_ID);
+          deleteRoom();
+          console.log('[Game] LAN_ROOM finished. Room deleted.');
+          return;
+        }
+
+        io.to(LAN_ROOM_ID).emit('round:transition', {
+          nextInMs: ROUND_TRANSITION_DELAY_MS,
+          nextQuestion: Number(next.index) + 1,
+          totalQuestions: Number(next.total),
+        });
+
+        clearTimerByRoom(roundTransitionTimers, LAN_ROOM_ID);
+        const transitionTimer = setTimeout(() => {
+          const pendingRoom = getRoom();
+          if (!pendingRoom || pendingRoom.status !== 'started') return;
+          if (Number(pendingRoom.currentQ) !== Number(next.index)) return;
+          emitNextQuestionForRound(pendingRoom, next);
+        }, ROUND_TRANSITION_DELAY_MS);
+
+        roundTransitionTimers.set(LAN_ROOM_ID, transitionTimer);
+      } catch (err) {
+        console.error('[Game] Round settle failed:', err.message);
+      }
+    }, ROUND_LOCK_DELAY_MS);
+
+    roundLockTimers.set(LAN_ROOM_ID, lockTimer);
+    callback?.({ success: true, queued: true });
+    return true;
+  };
+
+  registerTypeGuessHandlers({
+    socket,
+    io,
+    getRoom,
+    LAN_ROOM_ID,
+    settleCurrentRound,
+    getChatMode: () => chatInstance?.mode || 'FREE',
+  });
+
+  // ── client_ping ────────────────────────────────────────────────────────
+  const emitPong = ({ clientTime } = {}, callback) => {
+    const normalizedClientTime = Number.isFinite(Number(clientTime)) ? Number(clientTime) : Date.now();
+    const payload = { clientTime: normalizedClientTime };
+    socket.emit('server_pong', payload);
+    callback?.(payload);
+  };
+
+  socket.on('client_ping', emitPong);
+
+  // Backward compatibility for older clients still emitting client:ping.
   socket.on('client:ping', ({ timestamp } = {}, callback) => {
-    socket.emit('server:pong', { timestamp });
-    callback?.({ timestamp });
+    emitPong({ clientTime: timestamp }, callback);
   });
 
   // ── admin:generate-host-token ──────────────────────────────────────────
@@ -258,12 +389,9 @@ function registerHandlers(socket, io, questions, tokenManager) {
 
     const currentRoom = getRoom();
     if (currentRoom) {
-      const activeSession = String(currentRoom.hostSessionId || '').trim();
-
-      if (activeSession) {
-        if (!hasValidHostSession(currentRoom, hostSessionId)) {
-          return rejectHost(socket, callback);
-        }
+      if (!hasValidHostSession(currentRoom, hostSessionId)) {
+        return rejectHost(socket, callback);
+      }
 
         const existingTimer = hostDisconnectTimers.get(LAN_ROOM_ID);
         if (existingTimer) {
@@ -277,34 +405,24 @@ function registerHandlers(socket, io, questions, tokenManager) {
         socket.emit('chat:mode', { mode: chatInstance.mode, allowed: chatInstance.allowed });
         io.to(LAN_ROOM_ID).emit('player_joined', { players: currentRoom.players });
 
-        return callback({
-          success: true,
-          roomId: LAN_ROOM_ID,
-          deckSource: currentRoom.deckMeta?.source || 'none',
-          roomName: currentRoom.roomName,
-          status: currentRoom.status,
-          deckSelected: Array.isArray(currentRoom.questions) && currentRoom.questions.length > 0,
-        });
-      }
-
-      // Legacy/stale room without a host session lock: clear and allow fresh create.
-      const existingTimer = hostDisconnectTimers.get(LAN_ROOM_ID);
-      if (existingTimer) {
-        clearTimeout(existingTimer);
-        hostDisconnectTimers.delete(LAN_ROOM_ID);
-      }
-      deleteRoom();
+      return callback({
+        success: true,
+        roomId: LAN_ROOM_ID,
+        deckSource: currentRoom.deckMeta?.source || 'none',
+        roomName: currentRoom.roomName,
+        status: currentRoom.status,
+        deckSelected: Array.isArray(currentRoom.questions) && currentRoom.questions.length > 0,
+      });
     }
 
-    if (!String(hostSessionId || '').trim()) {
-      return rejectHost(socket, callback, 'Missing host session. Reload the host page and try again.');
-    }
-
-    const lanRoomId = initLanRoom(roomName.trim(), socket.id, hostSessionId || null);
+    const resolvedHostSessionId = String(hostSessionId || '').trim() || `legacy_${socket.id}`;
+    const lanRoomId = initLanRoom(roomName.trim(), socket.id, resolvedHostSessionId);
+    clearRoundTimers(lanRoomId);
     const room = getRoom();
     if (room) {
       room.questions = [];
       room.deckMeta = null;
+      room.answerMode = room.answerMode || 'multiple_choice';
     }
     lastRoomClosedReason = null;
     lastRoomClosedAt = 0;
@@ -312,7 +430,7 @@ function registerHandlers(socket, io, questions, tokenManager) {
     socket.playerName = 'Host';
     console.log(`[Host] "${roomName}" initialized room — LAN_ROOM: ${lanRoomId}`);
     socket.emit('chat:mode', { mode: chatInstance.mode, allowed: chatInstance.allowed });
-    callback({ success: true, roomId: lanRoomId, deckSource: 'none' });
+    callback({ success: true, roomId: lanRoomId, deckSource: 'none', answerMode: room?.answerMode || 'multiple_choice' });
   });
 
   // ── host:set_deck ────────────────────────────────────────────────────────
@@ -391,15 +509,16 @@ function registerHandlers(socket, io, questions, tokenManager) {
       status: room.status,
       deckSelected: roomQuestions.length > 0,
       deckMeta: room.deckMeta || null,
+      answerMode: room.answerMode || 'multiple_choice',
       players: room.players,
       currentQ: room.currentQ,
       totalQ: roomQuestions.length,
       activeQuestion: canSyncQuestion
-        ? withQuestionTiming({
+        ? withQuestionTiming(withAnswerMode({
             question: roomQuestions[currentIndex],
             index: currentIndex,
             total: roomQuestions.length,
-          })
+          }, room.answerMode))
         : null,
     });
   });
@@ -433,6 +552,7 @@ function registerHandlers(socket, io, questions, tokenManager) {
       chatAllowed: chatInstance.allowed,
       deckSelected: Array.isArray(room.questions) && room.questions.length > 0,
       deckMeta: room.deckMeta || null,
+      answerMode: room.answerMode || 'multiple_choice',
       playerName: assigned.name,
       avatarObject: assigned.avatarObject,
     });
@@ -473,6 +593,7 @@ function registerHandlers(socket, io, questions, tokenManager) {
       chatAllowed: chatInstance.allowed,
       deckSelected: Array.isArray(room.questions) && room.questions.length > 0,
       deckMeta: room.deckMeta || null,
+      answerMode: room.answerMode || 'multiple_choice',
       playerName: assigned.name,
       avatarObject: assigned.avatarObject,
     });
@@ -544,19 +665,45 @@ function registerHandlers(socket, io, questions, tokenManager) {
       status: room.status,
       deckSelected: roomQuestions.length > 0,
       deckMeta: room.deckMeta || null,
+      answerMode: room.answerMode || 'multiple_choice',
       myScore: me?.score || 0,
       chatMode: chatInstance.mode,
       chatAllowed: chatInstance.allowed,
       hasAnswered,
       answeredValue: hasAnswered ? room.answersIn[socket.id] : pending.lastAnswer,
       activeQuestion: canSyncQuestion
-        ? withQuestionTiming({
+        ? withQuestionTiming(withAnswerMode({
             question: sanitizeQuestion(roomQuestions[currentIndex]),
             index: currentIndex,
             total: roomQuestions.length,
-          })
+          }, room.answerMode))
         : null,
     });
+  });
+
+  // ── host:set_answer_mode ───────────────────────────────────────────────
+  socket.on('host:set_answer_mode', ({ mode, hostToken, hostSessionId }, callback) => {
+    if (!hostToken || !tokenManager.validateToken(hostToken, socket.id)) {
+      return callback?.({ ok: false, reason: 'unauthorized' });
+    }
+
+    const room = getRoom();
+    if (!room) return callback?.({ ok: false, reason: 'room_not_found' });
+    if (!hasValidHostSession(room, hostSessionId)) {
+      rejectHost(socket, null);
+      return callback?.({ ok: false, reason: 'host_locked' });
+    }
+    if (room.hostId !== socket.id) return callback?.({ ok: false, reason: 'not_host' });
+    if (room.status !== 'lobby') return callback?.({ ok: false, reason: 'room_not_lobby' });
+
+    const nextMode = String(mode || '').trim();
+    if (!['multiple_choice', 'type_guess'].includes(nextMode)) {
+      return callback?.({ ok: false, reason: 'invalid_mode' });
+    }
+
+    room.answerMode = nextMode;
+    io.to(LAN_ROOM_ID).emit('room:answer_mode', { mode: nextMode });
+    callback?.({ ok: true, mode: nextMode });
   });
 
   // ── player:updateProfile ───────────────────────────────────────────────
@@ -608,10 +755,12 @@ function registerHandlers(socket, io, questions, tokenManager) {
 
     try {
       const firstQ = startGame(room, roomQuestions);
-      const timedFirstQ = withQuestionTiming(firstQ);
+      room.roundSettled = false;
+      room.roundId = Number(room.roundId || 0);
+      clearRoundTimers(LAN_ROOM_ID);
       console.log(`[Game] LAN_ROOM started with ${room.players.length} player(s).`);
       io.to(LAN_ROOM_ID).emit('game_started', { roomName: room.roomName });
-      io.to(LAN_ROOM_ID).emit('next_question', timedFirstQ);
+      emitNextQuestionForRound(room, firstQ);
       callback({ success: true });
     } catch (err) {
       callback({ success: false, error: err.message });
@@ -622,6 +771,9 @@ function registerHandlers(socket, io, questions, tokenManager) {
   socket.on('submit_answer', ({ answer }, callback) => {
     const room = getRoom();
     if (!room) return callback?.({ success: false, error: 'Room not found.' });
+    if ((room.answerMode || 'multiple_choice') === 'type_guess') {
+      return callback?.({ success: false, error: 'This round uses type guess input.' });
+    }
 
     const roomQuestions = Array.isArray(room.questions) ? room.questions : [];
 
@@ -638,6 +790,10 @@ function registerHandlers(socket, io, questions, tokenManager) {
       count: result.answerCount,
       total: result.totalPlayers,
     });
+
+    if (!room.roundSettled && result.totalPlayers > 0 && result.answerCount >= result.totalPlayers) {
+      settleCurrentRound({ reason: 'all_answered' });
+    }
   });
 
   // ── next_question (host advances) ────────────────────────────────────────
@@ -650,26 +806,8 @@ function registerHandlers(socket, io, questions, tokenManager) {
     }
     if (room.hostId !== socket.id) return callback?.({ success: false, error: 'Only the host can advance.' });
 
-    const roomQuestions = Array.isArray(room.questions) ? room.questions : [];
-
-    try {
-      const { result, next, gameOver } = advanceQuestion(room, roomQuestions);
-
-      io.to(LAN_ROOM_ID).emit('question_result', result);
-
-      if (gameOver) {
-        io.to(LAN_ROOM_ID).emit('game_over', gameOver);
-        markRoomClosed('ended');
-        deleteRoom();
-        console.log(`[Game] LAN_ROOM finished. Room deleted.`);
-        return callback?.({ success: true, done: true });
-      }
-
-      io.to(LAN_ROOM_ID).emit('next_question', withQuestionTiming(next));
-      callback?.({ success: true, done: false });
-    } catch (err) {
-      callback?.({ success: false, error: err.message });
-    }
+    // Legacy/manual trigger support: force early settle if needed.
+    settleCurrentRound({ reason: 'host_manual_advance', callback });
   });
 
   // attach chat listeners
@@ -795,6 +933,7 @@ function registerHandlers(socket, io, questions, tokenManager) {
 
     io.to(LAN_ROOM_ID).emit('room_closed', { message: 'Host ended the room.' });
     markRoomClosed('host_disconnected');
+    clearRoundTimers(LAN_ROOM_ID);
     deleteRoom();
 
     const existingTimer = hostDisconnectTimers.get(LAN_ROOM_ID);
@@ -831,6 +970,7 @@ function registerHandlers(socket, io, questions, tokenManager) {
         if (liveRoom && !liveRoom.hostId) {
           io.to(LAN_ROOM_ID).emit('room_closed', { message: 'Host disconnected.' });
           markRoomClosed('host_disconnected');
+          clearRoundTimers(LAN_ROOM_ID);
           deleteRoom();
           console.log(`[Room] LAN_ROOM destroyed (host did not reconnect in time).`);
         }
