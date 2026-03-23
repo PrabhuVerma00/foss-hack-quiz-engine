@@ -125,6 +125,7 @@ export default function Player({ onBack }) {
   const [guessText, setGuessText] = useState('');
   const [guessFeedback, setGuessFeedback] = useState('');
   const [answeredCorrect, setAnsweredCorrect] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [privateGuessHistory, setPrivateGuessHistory] = useState([]);
   const [myScore, setMyScore] = useState(0);
   const [resultData, setResultData] = useState(null);
@@ -167,6 +168,7 @@ export default function Player({ onBack }) {
     setGuessText('');
     setGuessFeedback('');
     setAnsweredCorrect(null);
+    setIsSubmitting(false);
     setPrivateGuessHistory([]);
     setResultData(null);
     setNextQuestionIn(0);
@@ -524,21 +526,26 @@ export default function Player({ onBack }) {
   };
 
   const handleAnswer = (opt) => {
-    if (selected) return;
+    if (selected || isSubmitting) return;
+    setIsSubmitting(true);
     setSelected(opt);
     setAnsweredCorrect(null);
     setGuessFeedback('');
     setChatDrawerOpen(false);
     setPhase('answered');
-    socketRef.current.emit('submit_answer', { answer: opt });
+    socketRef.current.emit('submit_answer', { answer: opt }, () => {
+      setIsSubmitting(false);
+    });
   };
 
   const handleGuessSubmit = () => {
     const payload = String(guessText || '').trim();
-    if (!payload || !socketRef.current) return;
+    if (!payload || !socketRef.current || isSubmitting) return;
 
+    setIsSubmitting(true);
     setGuessFeedback('');
     socketRef.current.emit('player:chat_guess', { text: payload }, (res) => {
+      setIsSubmitting(false);
       if (!res?.ok) {
         if (res?.reason === 'already_answered') {
           setGuessFeedback('You already submitted your answer this round.');
@@ -894,7 +901,7 @@ export default function Player({ onBack }) {
                       type="button"
                       onClick={() => handleReusePrivateGuess(entry)}
                       title={entry}
-                      disabled={answeredCorrect === true}
+                      disabled={answeredCorrect === true || isSubmitting}
                       className="max-w-full rounded-full border border-slate-600 bg-slate-900/60 px-3 py-1.5 text-xs text-slate-200 transition-all hover:border-emerald-500/60 hover:bg-emerald-500/10 hover:text-emerald-300 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       <span className="block max-w-48 truncate">{entry}</span>
@@ -910,18 +917,18 @@ export default function Player({ onBack }) {
                 value={guessText}
                 onChange={(e) => setGuessText(e.target.value.slice(0, 180))}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !answeredCorrect) handleGuessSubmit();
+                  if (e.key === 'Enter' && !answeredCorrect && !isSubmitting) handleGuessSubmit();
                 }}
                 placeholder="Type your guess..."
-                disabled={answeredCorrect === true}
-                className={`flex-1 rounded-full border border-white/20 bg-slate-950/60 px-6 py-4 text-base font-semibold text-white placeholder:text-slate-400 shadow-inner focus:border-emerald-400/80 focus:ring-4 focus:ring-emerald-400/20 focus:outline-none transition-all ${answeredCorrect === true ? 'opacity-40 cursor-not-allowed' : ''}`}
+                disabled={answeredCorrect === true || isSubmitting}
+                className={`flex-1 rounded-full border border-white/20 bg-slate-950/60 px-6 py-4 text-base font-semibold text-white placeholder:text-slate-400 shadow-inner focus:border-emerald-400/80 focus:ring-4 focus:ring-emerald-400/20 focus:outline-none transition-all ${(answeredCorrect === true || isSubmitting) ? 'opacity-40 cursor-not-allowed' : ''}`}
               />
               <button
                 onClick={handleGuessSubmit}
                 className="rounded-full bg-gradient-to-r from-emerald-400 to-teal-400 px-8 py-4 text-sm font-black tracking-wide text-teal-950 transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_0_20px_rgba(52,211,153,0.5)] active:translate-y-0 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:shadow-none"
-                disabled={!guessText.trim() || answeredCorrect === true}
+                disabled={!guessText.trim() || answeredCorrect === true || isSubmitting}
               >
-                GUESS
+                {isSubmitting ? '...' : 'GUESS'}
               </button>
             </div>
             {guessFeedback && <p className="mt-3 text-xs font-semibold text-emerald-300">{guessFeedback}</p>}
@@ -932,6 +939,7 @@ export default function Player({ onBack }) {
               <button
                 key={`${question?.q_id || 'q'}_${idx}_${opt}`}
                 onClick={() => handleAnswer(opt)}
+                disabled={isSubmitting}
                 className={`group relative overflow-hidden w-full rounded-3xl border-2 px-6 py-7 text-left text-xl md:text-2xl font-black transition-all duration-300 hover:-translate-y-1 active:translate-y-0 active:scale-[0.98] shadow-lg hover:shadow-2xl backdrop-blur-md ${
                   idx % 4 === 0
                     ? 'border-sky-500/30 bg-sky-500/10 text-sky-50 hover:border-sky-400 hover:bg-sky-500/20 hover:shadow-sky-500/20'
@@ -991,7 +999,7 @@ export default function Player({ onBack }) {
                       type="button"
                       onClick={() => handleReusePrivateGuess(entry)}
                       title={entry}
-                      disabled={answeredCorrect === true}
+                      disabled={answeredCorrect === true || isSubmitting}
                       className="shrink-0 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-[11px] font-medium text-white/80 transition-all hover:border-emerald-400/50 hover:bg-emerald-500/10 hover:text-emerald-300 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       <span className="block max-w-36 truncate">{entry}</span>
@@ -1007,18 +1015,18 @@ export default function Player({ onBack }) {
                   value={guessText}
                   onChange={(e) => setGuessText(e.target.value.slice(0, 180))}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !answeredCorrect) handleGuessSubmit();
+                    if (e.key === 'Enter' && !answeredCorrect && !isSubmitting) handleGuessSubmit();
                   }}
                   placeholder={answeredCorrect ? 'Answer submitted' : 'Type your guess here...'}
-                  disabled={answeredCorrect === true}
-                  className={`min-h-14 flex-1 rounded-full border border-white/20 bg-slate-950/60 px-5 py-3 text-sm font-semibold text-white shadow-inner placeholder:text-slate-400 focus:border-emerald-400/80 focus:ring-2 focus:ring-emerald-400/30 focus:outline-none transition-all ${answeredCorrect === true ? 'cursor-not-allowed opacity-40' : ''}`}
+                  disabled={answeredCorrect === true || isSubmitting}
+                  className={`min-h-14 flex-1 rounded-full border border-white/20 bg-slate-950/60 px-5 py-3 text-sm font-semibold text-white shadow-inner placeholder:text-slate-400 focus:border-emerald-400/80 focus:ring-2 focus:ring-emerald-400/30 focus:outline-none transition-all ${(answeredCorrect === true || isSubmitting) ? 'cursor-not-allowed opacity-40' : ''}`}
                 />
                 <button
                   onClick={handleGuessSubmit}
                   className="min-h-14 rounded-full bg-gradient-to-r from-emerald-400 to-teal-400 px-6 py-3 text-sm font-black tracking-wide text-teal-950 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_0_15px_rgba(52,211,153,0.4)] active:translate-y-0 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
-                  disabled={!guessText.trim() || answeredCorrect === true}
+                  disabled={!guessText.trim() || answeredCorrect === true || isSubmitting}
                 >
-                  GUESS
+                  {isSubmitting ? '...' : 'GUESS'}
                 </button>
               </div>
             </div>

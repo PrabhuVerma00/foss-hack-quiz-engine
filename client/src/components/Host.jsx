@@ -205,8 +205,9 @@ export default function Host({ onBack, studioQuestions = null }) {
   const profilePulseTimersRef = useRef(new Map());
   const modeOptions = ['FREE', 'RESTRICTED', 'OFF'];
   const modeLabels = { FREE: 'OPEN', RESTRICTED: 'GUIDED', OFF: 'SILENT' };
-  const answerModeOptions = ['multiple_choice', 'type_guess'];
+  const answerModeOptions = ['auto', 'multiple_choice', 'type_guess'];
   const answerModeLabels = {
+    auto: 'AUTO DECK',
     multiple_choice: '4 OPTIONS',
     type_guess: 'TYPE GUESS',
   };
@@ -254,7 +255,7 @@ export default function Host({ onBack, studioQuestions = null }) {
           setRoomName(res.roomName || recoveredState.roomName || '');
           setPlayers(Array.isArray(res.players) ? res.players : []);
           setIsDeckReady(Boolean(res.deckSelected));
-          setAnswerMode(String(res.answerMode || 'multiple_choice'));
+          setAnswerMode(String(res.answerMode || 'auto'));
           if (res.deckMeta?.name) setDeckLabel(res.deckMeta.name);
           if (typeof res.deckMeta?.count === 'number') setSelectedDeckCount(res.deckMeta.count);
           if (res.deckMeta?.source) setSelectedDeckSource(res.deckMeta.source);
@@ -622,7 +623,7 @@ export default function Host({ onBack, studioQuestions = null }) {
       if (res.success) {
         setRoomId(LAN_ROOM);
         setPhase('lobby');
-        setAnswerMode(String(res.answerMode || 'multiple_choice'));
+        setAnswerMode(String(res.answerMode || 'auto'));
         setSelectedDeckKey('');
         setSelectedDeckSource('none');
         setSelectedDeckCount(null);
@@ -929,7 +930,7 @@ export default function Host({ onBack, studioQuestions = null }) {
   const syncAnswerMode = (mode, options = {}) => {
     const { requireLobby = true } = options;
     const normalizedMode = String(mode || '').trim();
-    if (!['multiple_choice', 'type_guess'].includes(normalizedMode)) return;
+    if (!['auto', 'multiple_choice', 'type_guess'].includes(normalizedMode)) return;
     if (requireLobby && phase !== 'lobby') {
       setError('Answer mode can only be changed in lobby.');
       return;
@@ -1002,7 +1003,7 @@ export default function Host({ onBack, studioQuestions = null }) {
     setSelectedDeckKey('');
     setSelectedDeckSource('none');
     setSelectedDeckCount(null);
-    setAnswerMode('multiple_choice');
+    setAnswerMode('auto');
     setError('');
     setPhase('setup');
   };
