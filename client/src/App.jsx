@@ -6,6 +6,7 @@ import DeckStudio from './pages/DeckStudio'
 import { useState } from 'react'
 import { HostTokenProvider } from './context/HostTokenProvider'
 import { ProtectedRoute } from './components/ProtectedRoute'
+import Landing from "./pages/Landing";
 
 function App() {
   const [studioQuestions, setStudioQuestions] = useState(null)
@@ -45,6 +46,7 @@ function App() {
             } />
           }
         />
+        <Route path="/landing" element={<Landing />} />
       </Routes>
       </BrowserRouter>
     </HostTokenProvider>
