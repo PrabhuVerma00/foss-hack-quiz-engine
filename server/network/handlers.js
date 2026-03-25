@@ -11,6 +11,8 @@
 const fs = require('fs');
 const path = require('path');
 
+const { isHotspotNetwork } = require('../utils/networkUtils');
+
 const {
   LAN_ROOM_ID,
   initLanRoom,
@@ -65,6 +67,13 @@ let lastRoomClosedAt = 0;
 function markRoomClosed(reason) {
   lastRoomClosedReason = reason;
   lastRoomClosedAt = Date.now();
+  
+  // Clear all pending zombie reconnections when room closes
+  for (const timer of playerDisconnectTimers.values()) {
+    clearTimeout(timer);
+  }
+  playerDisconnectTimers.clear();
+  pendingPlayerReconnect.clear();
 }
 
 function getJoinUnavailableMessage() {
@@ -117,26 +126,36 @@ function normalizeSlides(input) {
   for (let i = 0; i < input.length; i += 1) {
     const raw = input[i] || {};
     const id = String(raw.id || `slide_${String(i + 1).padStart(2, '0')}`).trim();
-    const type = String(raw.type || 'mcq').trim().toLowerCase();
-    const prompt = String(raw.prompt || '').trim();
-    const image = raw.image == null ? null : String(raw.image).trim();
-    const options = Array.isArray(raw.options) ? raw.options.map((opt) => String(opt || '').trim()) : [];
+    let type = String(raw.type || raw.q_type || 'mcq').trim().toLowerCase();
+    if (type !== 'typing') type = 'mcq';
+
+    const prompt = String(raw.prompt || raw.question || '').trim();
+    const image = raw.image == null ? (raw.asset_ref == null ? null : String(raw.asset_ref).trim()) : String(raw.image).trim();
+    const optionsRaw = Array.isArray(raw.options) ? raw.options.map((opt) => String(opt || '').trim()) : [];
+    const options = optionsRaw.slice(0, 4);
+    while (options.length < 4) options.push('');
+
     const acceptedAnswers = Array.isArray(raw.acceptedAnswers)
       ? raw.acceptedAnswers.map((value) => String(value || '').trim()).filter(Boolean)
-      : [];
+      : (Array.isArray(raw.fuzzy_allowances) ? raw.fuzzy_allowances.map((value) => String(value || '').trim()).filter(Boolean) : []);
+      
     const suggestionBank = Array.isArray(raw.suggestionBank)
       ? raw.suggestionBank.map((value) => String(value || '').trim()).filter(Boolean)
       : [];
-    const timeLimitRaw = Number(raw.timeLimit);
+      
+    const rawTime = raw.time_limit_ms != null ? raw.time_limit_ms : raw.timeLimit;
+    const timeLimitRaw = Number(rawTime);
     const timeLimit = Number.isFinite(timeLimitRaw) && timeLimitRaw >= 3000 ? timeLimitRaw : 20000;
 
     if (!id || !prompt) return null;
-    if (type !== 'mcq' && type !== 'typing') return null;
 
     if (type === 'mcq') {
-      if (options.length !== 4 || options.some((opt) => !opt)) return null;
-      const correctIndex = Number(raw.correctIndex);
-      if (!Number.isInteger(correctIndex) || correctIndex < 0 || correctIndex > 3) return null;
+      let correctIndex = Number(raw.correctIndex);
+      if (!Number.isInteger(correctIndex) || correctIndex < 0 || correctIndex > 3) {
+        const correctRaw = String(raw.correct_answer || raw.correct || '').trim().toLowerCase();
+        correctIndex = options.findIndex((opt) => opt.toLowerCase() === correctRaw);
+        if (correctIndex < 0) correctIndex = 0;
+      }
 
       normalized.push({
         id,
@@ -152,7 +171,13 @@ function normalizeSlides(input) {
       continue;
     }
 
-    if (acceptedAnswers.length === 0) return null;
+    let finalAcceptedAnswers = acceptedAnswers;
+    if (finalAcceptedAnswers.length === 0) {
+      const fallback = String(raw.correct_answer || raw.correct || '').trim();
+      if (fallback) finalAcceptedAnswers = [fallback];
+    }
+    
+    if (finalAcceptedAnswers.length === 0) return null;
     normalized.push({
       id,
       type,
@@ -160,7 +185,7 @@ function normalizeSlides(input) {
       image,
       options: [],
       correctIndex: -1,
-      acceptedAnswers,
+      acceptedAnswers: finalAcceptedAnswers,
       suggestionBank,
       timeLimit,
     });
@@ -181,7 +206,22 @@ function withQuestionTiming(payload) {
   };
 }
 
+function withAnswerMode(payload, answerMode = 'multiple_choice') {
+  if (!payload || !payload.question) return payload;
+  let nextMode = payload.question.answer_mode || answerMode || 'multiple_choice';
+  
+  if (nextMode === 'auto') {
+    nextMode = payload.question.type === 'typing' ? 'type_guess' : 'multiple_choice';
+  }
 
+  return {
+    ...payload,
+    question: {
+      ...payload.question,
+      answer_mode: nextMode,
+    },
+  };
+}
 
 function normalizeAvatarObject(input) {
   if (!input || typeof input !== 'object') {
@@ -270,7 +310,7 @@ function registerHandlers(socket, io, questions, tokenManager) {
   }
 
   const emitNextQuestionForRound = (room, nextQuestionPayload) => {
-    const timedPayload = withQuestionTiming(nextQuestionPayload);
+    const timedPayload = withQuestionTiming(withAnswerMode(nextQuestionPayload, room.answerMode));
     room.roundSettled = false;
     room.roundId = Number(room.roundId || 0) + 1;
 
@@ -405,11 +445,17 @@ function registerHandlers(socket, io, questions, tokenManager) {
   // G��G�� admin:generate-host-token G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��
   socket.on('admin:generate-host-token', (payload, callback) => {
     try {
+      const clientIp = socket.handshake.address;
+      if (clientIp !== '127.0.0.1' && clientIp !== '::1' && clientIp !== '::ffff:127.0.0.1') {
+        console.warn(`[Admin] Rejected token generation from non-localhost IP: ${clientIp}`);
+        return callback({ success: false, error: 'Unauthorized: Admin actions must be performed on the host machine.' });
+      }
+
       const token = tokenManager.generateToken();
       const ttlMs = tokenManager.getTokenTtl(token);
-
+      
       console.log(`[Admin] Generated host token from ${socket.id} (TTL: ${ttlMs}ms)`);
-
+      
       callback({
         success: true,
         token,
@@ -468,7 +514,7 @@ function registerHandlers(socket, io, questions, tokenManager) {
         roomName: currentRoom.roomName,
         status: currentRoom.status,
         deckSelected: Array.isArray(currentRoom.questions) && currentRoom.questions.length > 0,
-        answerMode: currentRoom.answerMode || 'multiple_choice',
+        answerMode: currentRoom.answerMode || 'auto',
       });
     }
 
@@ -479,7 +525,7 @@ function registerHandlers(socket, io, questions, tokenManager) {
     if (room) {
       room.questions = [];
       room.deckMeta = null;
-      room.answerMode = room.answerMode || 'multiple_choice';
+      room.answerMode = room.answerMode || 'auto';
     }
     lastRoomClosedReason = null;
     lastRoomClosedAt = 0;
@@ -487,7 +533,7 @@ function registerHandlers(socket, io, questions, tokenManager) {
     socket.playerName = 'Host';
     console.log(`[Host] "${roomName}" initialized room G�� LAN_ROOM: ${lanRoomId}`);
     socket.emit('chat:mode', { mode: chatInstance.mode, allowed: chatInstance.allowed });
-    callback({ success: true, roomId: lanRoomId, deckSource: 'none', answerMode: room?.answerMode || 'multiple_choice' });
+    callback({ success: true, roomId: lanRoomId, deckSource: 'none', answerMode: room?.answerMode || 'auto' });
   });
 
   // G��G�� host:set_deck G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��G��
@@ -569,16 +615,16 @@ function registerHandlers(socket, io, questions, tokenManager) {
       status: room.status,
       deckSelected: roomQuestions.length > 0,
       deckMeta: room.deckMeta || null,
-      answerMode: room.answerMode || 'multiple_choice',
+      answerMode: room.answerMode || 'auto',
       players: room.players,
       currentQ: room.currentQ,
       totalQ: roomQuestions.length,
       activeQuestion: canSyncQuestion
-        ? withQuestionTiming({
-          question: room.activeSlide ? sanitizeQuestion(room.activeSlide) : sanitizeQuestion(roomQuestions[currentIndex]),
-          index: currentIndex,
-          total: roomQuestions.length,
-        })
+        ? withQuestionTiming(withAnswerMode({
+            question: roomQuestions[currentIndex],
+            index: currentIndex,
+            total: roomQuestions.length,
+          }, room.answerMode))
         : null,
     });
   });
@@ -594,6 +640,10 @@ function registerHandlers(socket, io, questions, tokenManager) {
     }
     if (room.status !== 'lobby') {
       return callback({ success: false, error: 'Game already in progress.' });
+    }
+    
+    if (isHotspotNetwork() && room.players.length >= 10) {
+      return callback({ success: false, error: 'Hardware capacity limit reached. Hotspots support max 10 players.' });
     }
 
     const assigned = generateJoinProfile(room);
@@ -632,6 +682,10 @@ function registerHandlers(socket, io, questions, tokenManager) {
     if (room.status !== 'lobby') {
       return callback({ success: false, error: 'Game already in progress.' });
     }
+    
+    if (isHotspotNetwork() && room.players.length >= 10) {
+      return callback({ success: false, error: 'Hardware capacity limit reached. Hotspots support max 10 players.' });
+    }
 
     const assigned = generateJoinProfile(room);
     addPlayer({
@@ -666,6 +720,12 @@ function registerHandlers(socket, io, questions, tokenManager) {
       return callback?.({ success: false, error: 'No resumable player session.' });
     }
 
+    const existingTimer = playerDisconnectTimers.get(effectiveSessionId);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+      playerDisconnectTimers.delete(effectiveSessionId);
+    }
+
     const room = getRoom();
     if (!room) {
       pendingPlayerReconnect.delete(effectiveSessionId);
@@ -680,12 +740,6 @@ function registerHandlers(socket, io, questions, tokenManager) {
     if (room.status === 'finished') {
       pendingPlayerReconnect.delete(effectiveSessionId);
       return callback?.({ success: false, error: 'Game already finished.' });
-    }
-
-    const existingTimer = playerDisconnectTimers.get(effectiveSessionId);
-    if (existingTimer) {
-      clearTimeout(existingTimer);
-      playerDisconnectTimers.delete(effectiveSessionId);
     }
 
     addPlayer({
@@ -725,18 +779,18 @@ function registerHandlers(socket, io, questions, tokenManager) {
       status: room.status,
       deckSelected: roomQuestions.length > 0,
       deckMeta: room.deckMeta || null,
-      answerMode: room.answerMode || 'multiple_choice',
+      answerMode: room.answerMode || 'auto',
       myScore: me?.score || 0,
       chatMode: chatInstance.mode,
       chatAllowed: chatInstance.allowed,
       hasAnswered,
       answeredValue: hasAnswered ? room.answersIn[socket.id] : pending.lastAnswer,
       activeQuestion: canSyncQuestion
-        ? withQuestionTiming({
-          question: room.activeSlide ? sanitizeQuestion(room.activeSlide) : sanitizeQuestion(roomQuestions[currentIndex]),
-          index: currentIndex,
-          total: roomQuestions.length,
-        })
+        ? withQuestionTiming(withAnswerMode({
+            question: sanitizeQuestion(roomQuestions[currentIndex]),
+            index: currentIndex,
+            total: roomQuestions.length,
+          }, room.answerMode))
         : null,
     });
   });
@@ -756,7 +810,7 @@ function registerHandlers(socket, io, questions, tokenManager) {
     if (room.status !== 'lobby') return callback?.({ ok: false, reason: 'room_not_lobby' });
 
     const nextMode = String(mode || '').trim();
-    if (!['auto', 'multiple_choice', 'type_guess'].includes(nextMode)) {
+    if (!['multiple_choice', 'type_guess', 'auto'].includes(nextMode)) {
       return callback?.({ ok: false, reason: 'invalid_mode' });
     }
 
@@ -1035,7 +1089,7 @@ function registerHandlers(socket, io, questions, tokenManager) {
     // Check if this is a player
     const disconnectedPlayer = room?.players.find((p) => p.id === socket.id);
     const wasPlayerRemoved = removePlayer(socket.id);
-
+    
     if (wasPlayerRemoved && room) {
       if (room) {
         let lastAnswer;

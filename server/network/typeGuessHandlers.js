@@ -9,10 +9,15 @@ function registerTypeGuessHandlers({ socket, io, getRoom, LAN_ROOM_ID, settleCur
     const room = getRoom();
     if (!room) return callback?.({ ok: false, reason: 'room_not_found' });
     if (room.status !== 'started') return callback?.({ ok: false, reason: 'game_not_started' });
-    const currentQ = room.activeSlide;
+    const currentQ = Array.isArray(room.questions) ? room.questions[room.currentQ] : null;
     if (!currentQ) return callback?.({ ok: false, reason: 'question_not_found' });
     
-    if (currentQ.answer_mode !== 'type_guess') {
+    let effectiveMode = currentQ.answer_mode || room.answerMode || 'multiple_choice';
+    if (effectiveMode === 'auto') {
+      effectiveMode = currentQ.type === 'typing' ? 'type_guess' : 'multiple_choice';
+    }
+
+    if (effectiveMode !== 'type_guess') {
       return callback?.({ ok: false, reason: 'type_guess_disabled' });
     }
 
@@ -27,7 +32,7 @@ function registerTypeGuessHandlers({ socket, io, getRoom, LAN_ROOM_ID, settleCur
     if (!rawGuess) return callback?.({ ok: false, reason: 'empty_guess' });
 
     const gameMode = room.gameMode || 'arcade';
-    const validationResult = validateAnswer(currentQ, rawGuess, gameMode);
+    const validationResult = validateAnswer(currentQ, rawGuess, gameMode, true);
 
     if (validationResult.correct) {
       const timeRemainingMs = Math.max(0, (room.currentQEndsAt || Date.now()) - Date.now());

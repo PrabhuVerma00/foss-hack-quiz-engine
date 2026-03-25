@@ -18,6 +18,7 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const crypto = require('crypto');
 
 const { loadDeck, DEFAULT_DECK_PATH } = require('./core/deckLoader');
 const { registerHandlers } = require('./network/handlers');
@@ -47,10 +48,13 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: { origin: '*', methods: ['GET', 'POST'] },
+  pingTimeout: 60000,
+  pingInterval: 25000,
 });
 
 app.use(cors());
 app.use(express.json());
+app.use(express.static(path.join(__dirname, 'public')));
 
 //  Deck loading 
 
@@ -74,6 +78,25 @@ io.on('connection', (socket) => {
 });
 
 //  API endpoints
+
+app.post('/api/upload', express.raw({ type: 'image/webp', limit: '10mb' }), (req, res) => {
+  if (!req.body || !Buffer.isBuffer(req.body)) {
+    return res.status(400).json({ error: 'No valid image buffer received' });
+  }
+  try {
+    const publicDir = path.resolve(__dirname, 'public', 'uploads');
+    if (!fs.existsSync(publicDir)) {
+      fs.mkdirSync(publicDir, { recursive: true });
+    }
+    const filename = `img_${crypto.randomUUID()}.webp`;
+    const filepath = path.join(publicDir, filename);
+    fs.writeFileSync(filepath, req.body);
+    res.json({ url: `/uploads/${filename}` });
+  } catch (err) {
+    console.error('[Upload] Error saving image:', err);
+    res.status(500).json({ error: 'Failed to save image' });
+  }
+});
 
 app.get('/api/decks', (req, res) => {
   const decksDir = path.resolve(__dirname, 'data', 'decks');

@@ -57,7 +57,7 @@ function loadDeck(deckPath) {
  * @returns {object} Safe public slide payload.
  */
 function sanitizeQuestion(slide) {
-  const SAFE_FIELDS = ['id', 'type', 'prompt', 'image', 'options', 'suggestionBank', 'timeLimit', 'answer_mode'];
+  const SAFE_FIELDS = ['id', 'type', 'prompt', 'image', 'options', 'suggestionBank', 'timeLimit'];
   const safe = {};
 
   SAFE_FIELDS.forEach((field) => {

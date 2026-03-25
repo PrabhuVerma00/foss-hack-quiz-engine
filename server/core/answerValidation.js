@@ -37,6 +37,15 @@ function buildAcceptedAnswers(slide) {
   const fromSlide = [];
   if (slide?.correct_answer) fromSlide.push(slide.correct_answer);
   if (Array.isArray(slide?.fuzzy_allowances)) fromSlide.push(...slide.fuzzy_allowances);
+  
+  if (fromSlide.length === 0 && Array.isArray(slide?.options)) {
+    const idx = Number(slide.correctIndex);
+    if (Number.isInteger(idx) && idx >= 0 && idx < slide.options.length) {
+      const optStr = String(slide.options[idx] || '').trim();
+      if (optStr) fromSlide.push(optStr);
+    }
+  }
+  
   return fromSlide;
 }
 
@@ -46,13 +55,14 @@ function buildAcceptedAnswers(slide) {
  * @param {object} slide - The current question slide
  * @param {string|number} answer - The submitted answer
  * @param {string} gameMode - 'casual', 'arcade', 'pro'
+ * @param {boolean} isTypeGuess - Force typing validation
  * 
  * @returns {{ correct: boolean, matchType: string|null, score: number, reason: string }}
  */
-function validateAnswer(slide, answer, gameMode = 'arcade') {
+function validateAnswer(slide, answer, gameMode = 'arcade', isTypeGuess = false) {
   if (!slide) return { correct: false, matchType: null, score: 0, reason: 'no_slide' };
 
-  const type = String(slide.answer_mode === 'type_guess' ? 'typing' : 'mcq').trim().toLowerCase();
+  const type = isTypeGuess ? 'typing' : String(slide.answer_mode === 'type_guess' ? 'typing' : 'mcq').trim().toLowerCase();
 
   if (type === 'mcq') {
     const isCorrect = isMcqCorrect(slide, answer);
