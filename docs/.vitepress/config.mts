@@ -21,6 +21,14 @@ export default defineConfig({
         ]
       },
       {
+        text: 'Learn the Basics',
+        items: [
+          { text: 'Game Modes', link: '/guide/game-modes' },
+          { text: 'Deck Studio', link: '/guide/deck-studio' },
+          { text: 'Chat System', link: '/guide/chat' },
+        ]
+      },
+      {
         text: 'Setup & Deployment',
         items: [
           { text: 'Configuration', link: '/guide/configuration' },
