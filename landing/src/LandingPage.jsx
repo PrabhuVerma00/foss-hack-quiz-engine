@@ -1,4 +1,12 @@
 import { useState, useEffect, useRef } from "react";
+import Hero from "./components/Hero";
+import Navigation from "./components/Navigation";
+import Features from "./components/Features";
+import HowItWorks from "./components/HowItWorks";
+import Footer from "./components/Footer";
+import { DynamicBackground } from "./components/DynamicBackground";
+import { DeveloperExperience } from "./components/DeveloperExperience";
+import { SocialProof } from "./components/SocialProof";
 
 /* ─────────────────────────────────────────
    GLOBAL KEYFRAME STYLES (injected once)
@@ -117,8 +125,8 @@ const GlobalStyles = () => (
 
     .bento-card {
       animation: card-glow-in 0.6s ease both;
-      background: rgba(15, 23, 42, 0.6);
-      border: 1px solid rgba(51, 65, 85, 0.8);
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.1);
       border-radius: 16px;
       backdrop-filter: blur(20px);
       transition: border-color 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease;
@@ -133,9 +141,33 @@ const GlobalStyles = () => (
       pointer-events: none;
     }
     .bento-card:hover {
-      border-color: rgba(16,185,129,0.45);
-      transform: translateY(-2px);
-      box-shadow: 0 8px 32px -8px rgba(16,185,129,0.2), 0 0 0 1px rgba(16,185,129,0.1);
+      border-color: rgba(16,185,129,0.6);
+      transform: translateY(-4px);
+      box-shadow: 0 0 30px -8px rgba(16,185,129,0.5), 0 0 60px -4px rgba(6,182,212,0.2), 0 0 0 1px rgba(16,185,129,0.2);
+    }
+
+    .interactive-border {
+      position: relative;
+      overflow: hidden;
+    }
+
+    .interactive-border::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      pointer-events: none;
+      background: radial-gradient(
+        250px circle at var(--x, 50%) var(--y, 50%),
+        rgba(16, 185, 129, 0.18),
+        transparent 60%
+      );
+      opacity: 0;
+      transition: opacity 0.25s ease;
+    }
+
+    .interactive-border:hover::after {
+      opacity: 1;
     }
 
     .ping-dot {
@@ -174,10 +206,10 @@ const GlobalStyles = () => (
     }
 
     .terminal-window {
-      background: #0d1117;
-      border: 1px solid rgba(51, 65, 85, 0.9);
-      border-radius: 12px;
-      box-shadow: 0 24px 80px -16px rgba(0,0,0,0.8), 0 0 0 1px rgba(16,185,129,0.08), inset 0 1px 0 rgba(255,255,255,0.04);
+      background: rgba(3, 7, 18, 0.8);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 16px;
+      box-shadow: 0 0 40px -8px rgba(16,185,129,0.3), 0 0 80px -12px rgba(6,182,212,0.15), inset 0 1px 0 rgba(255,255,255,0.05);
       overflow: hidden;
     }
     .terminal-scanline {
@@ -199,6 +231,17 @@ const GlobalStyles = () => (
     .pipeline-connector {
       stroke-dasharray: 200;
       animation: pipeline-flow 1.5s ease-out both;
+    }
+
+    /* PREMIUM EFFECTS */
+    .animate-shimmer {
+      background-image: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+      background-size: 200% 100%;
+      animation: shimmer 2s infinite;
+    }
+
+    .group-hover\:animate-shimmer {
+      animation: shimmer 2s infinite;
     }
   `}</style>
 );
@@ -820,118 +863,42 @@ const ArrowConnector = () => (
   </div>
 );
 
-const HowItWorksSection = () => (
-  <section className="font-geist w-full max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-    {/* Divider */}
-    <div className="flex items-center gap-4 mb-12">
-      <div className="h-px flex-1 bg-gradient-to-r from-transparent to-slate-800" />
-      <span className="font-mono text-xs tracking-[0.25em] text-slate-500 uppercase whitespace-nowrap">How It Works</span>
-      <div className="h-px flex-1 bg-gradient-to-l from-transparent to-slate-800" />
-    </div>
-
-    {/* Steps */}
-    <div className="flex flex-col md:flex-row items-start md:items-center gap-6 md:gap-0">
-      {STEPS.map((step, i) => (
-        <>
-          <div
-            key={step.num}
-            className="flex-1 flex flex-col items-center text-center gap-4 p-6 rounded-xl border border-slate-800/60 bg-slate-900/30 backdrop-blur-sm hover:border-emerald-500/30 transition-all duration-300 group"
-            style={{ animation: `card-glow-in 0.5s ease ${i * 150}ms both` }}
-          >
-            {/* Step number */}
-            <div className="font-mono text-[10px] tracking-[0.3em] text-slate-600 uppercase">{step.num}</div>
-
-            {/* Icon circle */}
-            <div className={`w-16 h-16 rounded-2xl border flex items-center justify-center transition-all duration-300 ${step.color === "cyan"
-                ? "text-cyan-400 border-cyan-400/20 bg-cyan-400/5 group-hover:border-cyan-400/40 group-hover:bg-cyan-400/10"
-                : "text-emerald-400 border-emerald-400/20 bg-emerald-400/5 group-hover:border-emerald-400/40 group-hover:bg-emerald-400/10"
-              }`}>
-              {step.icon}
-            </div>
-
-            {/* Label */}
-            <div className="font-bold text-white text-lg">{step.label}</div>
-
-            {/* Desc */}
-            <p className="text-slate-400 text-sm leading-relaxed">{step.desc}</p>
-          </div>
-
-          {i < STEPS.length - 1 && <ArrowConnector key={`arrow-${i}`} />}
-        </>
-      ))}
-    </div>
-  </section>
-);
-
-/* ─────────────────────────────────────────
-   FOOTER
-───────────────────────────────────────── */
-const Footer = () => (
-  <footer className="font-geist w-full border-t border-slate-800/60 py-10 px-6">
-    <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
-      <div className="flex items-center gap-3">
-        {/* Logo mark */}
-        <div className="w-6 h-6 rounded border border-emerald-500/40 bg-emerald-500/10 flex items-center justify-center">
-          <div className="w-2.5 h-2.5 rounded-sm bg-emerald-400" />
-        </div>
-        <span className="font-mono text-sm text-slate-400">
-          <span className="text-emerald-400 font-bold">LocalFlux</span>
-        </span>
-      </div>
-
-      <div className="flex flex-col items-center gap-1">
-        <div className="flex items-center gap-2 text-slate-500 text-xs font-mono">
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" className="text-emerald-500">
-            <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z" />
-          </svg>
-          100% Free and Open Source
-        </div>
-        <span className="text-slate-600 text-xs font-mono">Built for FOSS Hack 2026</span>
-      </div>
-
-      <div className="flex items-center gap-3">
-        <a href="#" className="font-mono text-xs text-slate-500 hover:text-emerald-400 transition-colors">Docs</a>
-        <span className="text-slate-700">·</span>
-        <a href="#" className="font-mono text-xs text-slate-500 hover:text-emerald-400 transition-colors">GitHub</a>
-        <span className="text-slate-700">·</span>
-        <a href="#" className="font-mono text-xs text-slate-500 hover:text-emerald-400 transition-colors">License</a>
-      </div>
-    </div>
-  </footer>
-);
-
 /* ─────────────────────────────────────────
    ROOT EXPORT
 ───────────────────────────────────────── */
 export default function LocalFluxSections() {
   return (
-    <div className="min-h-screen font-geist" style={{ background: "#030712" }}>
-      <GlobalStyles />
-
-      {/* Ambient radial glow (matches Hero aesthetic) */}
-      <div
-        aria-hidden
-        style={{
-          position: "fixed", inset: 0, pointerEvents: "none", zIndex: 0,
-          background: "radial-gradient(ellipse 80% 50% at 50% 120%, rgba(16,185,129,0.06) 0%, transparent 70%)",
-        }}
-      />
+    <div className="min-h-screen relative font-geist">
+      <DynamicBackground />
 
       <div style={{ position: "relative", zIndex: 1 }}>
+        <GlobalStyles />
+
+        <Navigation />
+        <Hero />
+        <Features />
         <BentoGrid />
 
-        {/* Subtle section divider */}
-        <div className="w-full max-w-3xl mx-auto px-6">
-          <div className="h-px bg-gradient-to-r from-transparent via-slate-800 to-transparent" />
+        <DeveloperExperience />
+
+        {/* Enhanced section divider with glow */}
+        <div className="w-full max-w-3xl mx-auto px-6 my-8">
+          <div className="h-px bg-gradient-to-r from-transparent via-white/20 to-transparent relative">
+            <div className="absolute inset-0 blur-sm bg-gradient-to-r from-transparent via-emerald-400/10 to-transparent" />
+          </div>
         </div>
 
         <TerminalSection />
 
-        <div className="w-full max-w-3xl mx-auto px-6">
-          <div className="h-px bg-gradient-to-r from-transparent via-slate-800 to-transparent" />
+        {/* Enhanced section divider with glass */}
+        <div className="w-full max-w-3xl mx-auto px-6 my-8">
+          <div className="h-px bg-gradient-to-r from-transparent via-white/20 to-transparent relative">
+            <div className="absolute inset-0 blur-sm bg-gradient-to-r from-transparent via-cyan-400/10 to-transparent" />
+          </div>
         </div>
 
-        <HowItWorksSection />
+        <HowItWorks />
+        <SocialProof />
         <Footer />
       </div>
     </div>
